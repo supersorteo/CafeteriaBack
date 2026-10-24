@@ -1,0 +1,10 @@
+target/
+uploads/
+.git/
+.gitignore
+.gitattributes
+.idea/
+.vscode/
+.env
+*.md
+src/main/resources/application.properties

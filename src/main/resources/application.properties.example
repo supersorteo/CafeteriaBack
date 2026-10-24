@@ -1,48 +1,41 @@
+# Copia este archivo como application.properties (que NO se sube a git) y ajusta tus valores locales.
+# Para producción se usa application-production.properties con variables de entorno (ver DEPLOY.md).
+
 spring.application.name=cafeteria
 
 # Base de datos - PostgreSQL local
 spring.datasource.url=jdbc:postgresql://localhost:5432/cafeteria
 spring.datasource.username=postgres
-spring.datasource.password=Tanque.123
+spring.datasource.password=CAMBIA_ESTA_CLAVE
 spring.datasource.driver-class-name=org.postgresql.Driver
 
 # JPA
-spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
-spring.jpa.hibernate.ddl-auto=update
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.open-in-view=false
 
 # Flyway y sesiones (esquema gestionado por migraciones)
 spring.flyway.enabled=true
 spring.session.jdbc.initialize-schema=never
+spring.session.timeout=30m
 server.servlet.session.timeout=30m
 server.servlet.session.cookie.http-only=true
 server.servlet.session.cookie.same-site=lax
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
 
 # Servidor
 server.port=8080
 
-# Multipart upload
+# Subida de imágenes
 spring.servlet.multipart.max-file-size=5MB
 spring.servlet.multipart.max-request-size=6MB
 
-# JPA open-in-view
-spring.jpa.open-in-view=false
-
-# CORS
-cors.allowed-origins=http://localhost:4200
-
-# Imágenes en local
+# Imágenes en local (en producción se usa Cloudinary)
 media.storage=local
 app.upload.dir=uploads
+media.cleanup.enabled=true
 
-# Cloudinary (solo producción — no se usa en local)
-cloudinary.cloud-name=drd37bhg0
-cloudinary.api-key=369781325274234
-cloudinary.api-secret=iWVO8xwXsJrDxUC-c8BlDyjATZ4
-
-# Sesión y seed de desarrollo (nunca activar en producción)
-spring.session.timeout=30m
+# Seed de desarrollo (nunca activar en producción)
 seed.dev.enabled=true
 seed.dev.password=${SEED_DEV_PASSWORD:DevPass123!}
 
@@ -52,5 +45,3 @@ mail.sender=log
 mail.from=no-reply@laterraza.local
 app.public-base-url=http://localhost:4200
 outbox.worker.enabled=true
-
-media.cleanup.enabled=true
