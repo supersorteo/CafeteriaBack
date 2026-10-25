@@ -43,8 +43,7 @@ public class SecurityConfig {
     SecurityFilterChain superAdminFilterChain(HttpSecurity http,
             @Value("${security.superadmin.max-attempts:5}") int maxAttempts,
             @Value("${security.superadmin.window-minutes:15}") int windowMinutes,
-            @Value("${security.trust-forwarded-for:false}") boolean trustForwardedFor,
-            @Value("${security.global-limit-factor:10}") int globalLimitFactor) throws Exception {
+            @Value("${security.trust-forwarded-for:false}") boolean trustForwardedFor) throws Exception {
         Function<HttpServletRequest, String> clientKey = request -> ClientIp.resolve(request, trustForwardedFor);
         String loginPath = API + "/superadmin/auth/login";
         String verifyPath = API + "/superadmin/auth/verify";
@@ -64,9 +63,9 @@ public class SecurityConfig {
                                 exception instanceof CsrfException ? "Token CSRF ausente o inválido"
                                         : "Operación no permitida")))
                 .addFilterBefore(new RateLimitFilter(loginPath, maxAttempts, Duration.ofMinutes(windowMinutes), clientKey,
-                        globalCeiling(maxAttempts, globalLimitFactor)), AuthorizationFilter.class)
+                        Integer.MAX_VALUE), AuthorizationFilter.class)
                 .addFilterBefore(new RateLimitFilter(verifyPath, maxAttempts * 2, Duration.ofMinutes(windowMinutes), clientKey,
-                        globalCeiling(maxAttempts * 2, globalLimitFactor)), AuthorizationFilter.class);
+                        Integer.MAX_VALUE), AuthorizationFilter.class);
         return http.build();
     }
 

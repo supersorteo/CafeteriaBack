@@ -34,6 +34,7 @@ class SuperAdminAuthTest extends IntegrationTestSupport {
     @BeforeEach
     void reset() {
         auth.resetLockout();
+        auth.usePenalty(0);
         auth.useClock(Clock.systemUTC());
     }
 
@@ -115,6 +116,25 @@ class SuperAdminAuthTest extends IntegrationTestSupport {
     }
 
     @Test
+    void losIntentosEnParaleloNoSuperanElLimiteDeCincoPorCodigo() throws Exception {
+        Cookie pending = startLogin();
+        String real = lastCode();
+        String wrong = real.equals("000000") ? "111111" : "000000";
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(12);
+        java.util.List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            results.add(pool.submit(() -> verify(pending, wrong).getResponse().getStatus()));
+        }
+        for (java.util.concurrent.Future<Integer> result : results) {
+            assertThat(result.get()).isEqualTo(401);
+        }
+        pool.shutdown();
+
+        assertThat(verify(pending, real).getResponse().getStatus()).isEqualTo(401);
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(pending)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void sinHaberIniciadoElPrimerPasoElCodigoNoSirve() throws Exception {
         assertThat(verify(new Cookie("SA_SESSION", "inexistente"), "123456").getResponse().getStatus()).isEqualTo(401);
     }
@@ -136,13 +156,36 @@ class SuperAdminAuthTest extends IntegrationTestSupport {
     }
 
     @Test
-    void tras10FallosSeguidosSeBloqueaTodoIntentoUnTiempo() throws Exception {
-        for (int i = 0; i < 10; i++) {
+    void losFallosDeCualquieraNuncaBloqueanAlSuperadminLegitimo() throws Exception {
+        auth.usePenalty(0);
+        for (int i = 0; i < 15; i++) {
             assertThat(login(EMAIL, "mala-clave-larga-" + i).getResponse().getStatus()).isEqualTo(401);
         }
 
-        assertThat(login(EMAIL, PASSWORD_SA).getResponse().getStatus()).isEqualTo(429);
-        assertThat(mail.sent).isEmpty();
+        MvcResult result = login(EMAIL, PASSWORD_SA);
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        assertThat(mail.sent).hasSize(1);
+    }
+
+    @Test
+    void conMuchosFallosCadaIntentoErroneoSeRetrasa() throws Exception {
+        auth.usePenalty(300);
+        for (int i = 0; i < 10; i++) {
+            auth.usePenalty(0);
+            login(EMAIL, "mala-clave-larga-" + i);
+        }
+        auth.usePenalty(300);
+
+        long started = System.nanoTime();
+        login(EMAIL, "otra-mala-clave-larga");
+        long wrongMillis = (System.nanoTime() - started) / 1_000_000;
+        started = System.nanoTime();
+        login(EMAIL, PASSWORD_SA);
+        long correctMillis = (System.nanoTime() - started) / 1_000_000;
+
+        assertThat(wrongMillis).isGreaterThanOrEqualTo(300);
+        assertThat(correctMillis).isLessThan(300);
     }
 
     @Test

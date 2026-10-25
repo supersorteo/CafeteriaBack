@@ -9,6 +9,8 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.Deque;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.HexFormat;
 
 import org.slf4j.Logger;
@@ -35,19 +37,20 @@ public class SuperAdminAuthService {
     static final String ATTR_HASH = "sa.code.hash";
     static final String ATTR_SALT = "sa.code.salt";
     static final String ATTR_EXPIRES = "sa.code.expires";
-    static final String ATTR_TRIES = "sa.code.tries";
     static final int MAX_TRIES = 5;
     static final Duration CODE_TTL = Duration.ofMinutes(10);
     static final int IDLE_SECONDS = 15 * 60;
-    static final int GLOBAL_FAILURES = 10;
-    static final Duration GLOBAL_WINDOW = Duration.ofMinutes(15);
+    static final int SLOWDOWN_AFTER_FAILURES = 10;
+    static final Duration FAILURE_WINDOW = Duration.ofMinutes(15);
 
     private final SuperAdminProperties config;
     private final EmailSender mail;
     private final SecureRandom random = new SecureRandom();
     private final HttpSessionSecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
     private final Deque<Long> failures = new ArrayDeque<>();
+    private final ConcurrentHashMap<String, AtomicInteger> attempts = new ConcurrentHashMap<>();
     private Clock clock = Clock.systemUTC();
+    private long penaltyMillis = 1500;
 
     public SuperAdminAuthService(SuperAdminProperties config, EmailSender mail) {
         this.config = config;
@@ -56,9 +59,8 @@ public class SuperAdminAuthService {
 
     public SuperAdminDtos.LoginResponse login(String email, String password, HttpServletRequest request) {
         requireEnabled();
-        requireNotLocked();
         if (!config.matches(email, password)) {
-            registerFailure();
+            failAndSlowDown();
             throw invalid();
         }
         SecurityContextHolder.clearContext();
@@ -74,7 +76,7 @@ public class SuperAdminAuthService {
         session.setAttribute(ATTR_SALT, saltText);
         session.setAttribute(ATTR_HASH, hash(saltText, code));
         session.setAttribute(ATTR_EXPIRES, Instant.now(clock).plus(CODE_TTL).toEpochMilli());
-        session.setAttribute(ATTR_TRIES, 0);
+        attempts.put(session.getId(), new AtomicInteger());
         session.setMaxInactiveInterval((int) CODE_TTL.toSeconds());
         try {
             mail.send(new EmailMessage(config.email(), "Tu código de acceso",
@@ -91,29 +93,30 @@ public class SuperAdminAuthService {
 
     public void verify(String code, HttpServletRequest request, HttpServletResponse response) {
         requireEnabled();
-        requireNotLocked();
         HttpSession session = request.getSession(false);
         if (session == null || session.getAttribute(ATTR_HASH) == null) {
             throw invalid();
         }
+        String sessionId = session.getId();
         long expires = (Long) session.getAttribute(ATTR_EXPIRES);
-        int tries = (Integer) session.getAttribute(ATTR_TRIES);
-        if (Instant.now(clock).toEpochMilli() > expires || tries >= MAX_TRIES) {
+        int attempt = attempts.computeIfAbsent(sessionId, key -> new AtomicInteger()).incrementAndGet();
+        if (Instant.now(clock).toEpochMilli() > expires || attempt > MAX_TRIES) {
+            attempts.remove(sessionId);
             session.invalidate();
             throw invalid();
         }
         String expected = (String) session.getAttribute(ATTR_HASH);
         String candidate = hash((String) session.getAttribute(ATTR_SALT), code == null ? "" : code.strip());
         if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), candidate.getBytes(StandardCharsets.UTF_8))) {
-            registerFailure();
-            if (tries + 1 >= MAX_TRIES) {
+            failAndSlowDown();
+            if (attempt >= MAX_TRIES) {
+                attempts.remove(sessionId);
                 session.invalidate();
-            } else {
-                session.setAttribute(ATTR_TRIES, tries + 1);
             }
             throw invalid();
         }
-        for (String name : new String[] { ATTR_HASH, ATTR_SALT, ATTR_EXPIRES, ATTR_TRIES }) {
+        attempts.remove(sessionId);
+        for (String name : new String[] { ATTR_HASH, ATTR_SALT, ATTR_EXPIRES }) {
             session.removeAttribute(name);
         }
         request.changeSessionId();
@@ -138,6 +141,10 @@ public class SuperAdminAuthService {
         this.clock = testClock;
     }
 
+    void usePenalty(long millis) {
+        this.penaltyMillis = millis;
+    }
+
     void resetLockout() {
         synchronized (failures) {
             failures.clear();
@@ -150,22 +157,22 @@ public class SuperAdminAuthService {
         }
     }
 
-    private void requireNotLocked() {
+    private void failAndSlowDown() {
         long now = System.currentTimeMillis();
+        int recent;
         synchronized (failures) {
-            while (!failures.isEmpty() && now - failures.peekFirst() > GLOBAL_WINDOW.toMillis()) {
+            while (!failures.isEmpty() && now - failures.peekFirst() > FAILURE_WINDOW.toMillis()) {
                 failures.pollFirst();
             }
-            if (failures.size() >= GLOBAL_FAILURES) {
-                throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "too_many_attempts",
-                        "Demasiados intentos, inténtalo más tarde");
-            }
+            failures.addLast(now);
+            recent = failures.size();
         }
-    }
-
-    private void registerFailure() {
-        synchronized (failures) {
-            failures.addLast(System.currentTimeMillis());
+        if (recent > SLOWDOWN_AFTER_FAILURES && penaltyMillis > 0) {
+            try {
+                Thread.sleep(penaltyMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
