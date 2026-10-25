@@ -1,6 +1,5 @@
 HELP.md
 # Configuración local con contraseñas: no se versiona (usa application.properties.example)
-src/main/resources/application.properties
 application-local.properties
 uploads/
 .env
