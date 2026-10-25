@@ -86,6 +86,7 @@ public class PublicSiteService {
                 .toList();
 
         String heroUrl = null;
+        String logoUrl = null;
         List<String> aboutUrls = new ArrayList<>();
         List<GalleryItem> gallery = new ArrayList<>();
         for (SiteImage row : imageRows) {
@@ -95,6 +96,7 @@ public class PublicSiteService {
             }
             switch (row.getSlot()) {
                 case HERO -> heroUrl = url;
+                case LOGO -> logoUrl = url;
                 case ABOUT -> aboutUrls.add(url);
                 case GALLERY -> gallery.add(new GalleryItem(url, row.getAlt()));
             }
@@ -113,6 +115,6 @@ public class PublicSiteService {
                 siteHighlights.findByTenantIdOrderByPositionAsc(tenantId).stream()
                         .map(h -> new Highlight(h.getTitle(), h.getDescription())).toList(),
                 new Reservation(List.copyOf(tenant.getReservationAreas()), List.copyOf(tenant.getPartySizes())),
-                publicCategories);
+                publicCategories, logoUrl);
     }
 }

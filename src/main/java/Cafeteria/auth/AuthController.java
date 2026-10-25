@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import Cafeteria.security.TenantContext;
+import Cafeteria.site.SiteService;
 import Cafeteria.tenant.Role;
 import Cafeteria.tenant.Tenant;
 import Cafeteria.tenant.TenantRepository;
@@ -18,18 +19,20 @@ public class AuthController {
 
     public record CsrfResponse(String headerName) {}
 
-    public record TenantSummary(UUID id, String slug, String name, boolean published) {}
+    public record TenantSummary(UUID id, String slug, String name, boolean published, String logoUrl) {}
 
     public record MeResponse(String email, Role role, TenantSummary tenant) {}
 
     private final TenantContext tenantContext;
     private final UserRepository users;
     private final TenantRepository tenants;
+    private final SiteService site;
 
-    public AuthController(TenantContext tenantContext, UserRepository users, TenantRepository tenants) {
+    public AuthController(TenantContext tenantContext, UserRepository users, TenantRepository tenants, SiteService site) {
         this.tenantContext = tenantContext;
         this.users = users;
         this.tenants = tenants;
+        this.site = site;
     }
 
     @GetMapping("/csrf")
@@ -44,6 +47,7 @@ public class AuthController {
         User user = users.findById(current.userId()).orElseThrow();
         Tenant tenant = tenants.findById(current.tenantId()).orElseThrow();
         return new MeResponse(user.getEmail(), current.role(),
-                new TenantSummary(tenant.getId(), tenant.getSlug(), tenant.getName(), tenant.isPublished()));
+                new TenantSummary(tenant.getId(), tenant.getSlug(), tenant.getName(), tenant.isPublished(),
+                        site.logoUrl(tenant.getId())));
     }
 }

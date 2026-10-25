@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -161,6 +162,9 @@ public class SiteService {
         if (request.hero() != null) {
             requested.add(request.hero());
         }
+        if (request.logo() != null) {
+            requested.add(request.logo());
+        }
         Map<UUID, MediaAsset> found = media.byIds(tenantId, requested);
         for (UUID id : requested) {
             MediaAsset asset = found.get(id);
@@ -176,6 +180,9 @@ public class SiteService {
         List<SiteImage> rows = new ArrayList<>();
         if (request.hero() != null) {
             rows.add(new SiteImage(tenantId, SiteImage.Slot.HERO, 0, request.hero(), null));
+        }
+        if (request.logo() != null) {
+            rows.add(new SiteImage(tenantId, SiteImage.Slot.LOGO, 0, request.logo(), null));
         }
         for (int i = 0; i < about.size(); i++) {
             rows.add(new SiteImage(tenantId, SiteImage.Slot.ABOUT, i, about.get(i), null));
@@ -213,10 +220,19 @@ public class SiteService {
                         .map(h -> new SiteDtos.HighlightRef(h.getTitle(), h.getDescription())).toList());
     }
 
+    @Transactional(readOnly = true)
+    public String logoUrl(UUID tenantId) {
+        return siteImages.findByTenantIdOrderBySlotAscPositionAsc(tenantId).stream()
+                .filter(row -> row.getSlot() == SiteImage.Slot.LOGO).findFirst()
+                .flatMap(row -> Optional.ofNullable(media.byIds(tenantId, List.of(row.getMediaId())).get(row.getMediaId())))
+                .map(MediaAsset::getPublicUrl).orElse(null);
+    }
+
     private SiteImagesResponse imagesOf(UUID tenantId) {
         List<SiteImage> rows = siteImages.findByTenantIdOrderBySlotAscPositionAsc(tenantId);
         Map<UUID, MediaAsset> byId = media.byIds(tenantId, rows.stream().map(SiteImage::getMediaId).toList());
         ImageRef hero = null;
+        ImageRef logo = null;
         List<ImageRef> about = new ArrayList<>();
         List<GalleryRef> gallery = new ArrayList<>();
         for (SiteImage row : rows) {
@@ -226,11 +242,12 @@ public class SiteService {
             }
             switch (row.getSlot()) {
                 case HERO -> hero = new ImageRef(asset.getId(), asset.getPublicUrl());
+                case LOGO -> logo = new ImageRef(asset.getId(), asset.getPublicUrl());
                 case ABOUT -> about.add(new ImageRef(asset.getId(), asset.getPublicUrl()));
                 case GALLERY -> gallery.add(new GalleryRef(asset.getId(), asset.getPublicUrl(), row.getAlt()));
             }
         }
-        return new SiteImagesResponse(hero, about, gallery);
+        return new SiteImagesResponse(hero, about, gallery, logo);
     }
 
     private Tenant find(UUID tenantId) {

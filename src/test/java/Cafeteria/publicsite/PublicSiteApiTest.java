@@ -84,6 +84,21 @@ class PublicSiteApiTest extends IntegrationTestSupport {
     }
 
     @Test
+    void elLogoSoloApareceCuandoElNegocioLoSubio() throws Exception {
+        mvc.perform(get("/api/v1/public/sites/negocio-a"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.logoUrl").doesNotExist());
+
+        MediaAsset logo = uploadDirect(a);
+        siteImages.save(new SiteImage(a.getId(), SiteImage.Slot.LOGO, 0, logo.getId(), null));
+
+        mvc.perform(get("/api/v1/public/sites/negocio-a"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.logoUrl").value("/media/" + logo.getId()))
+                .andExpect(jsonPath("$.hero.imageUrl").value("/media/" + heroImage.getId()));
+    }
+
+    @Test
     void laRespuestaPublicaNoExponeDatosInternos() throws Exception {
         String json = mvc.perform(get("/api/v1/public/sites/negocio-a")).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();

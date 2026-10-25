@@ -17,7 +17,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class SiteImage {
 
-    public enum Slot { HERO, ABOUT, GALLERY }
+    public enum Slot { HERO, ABOUT, GALLERY, LOGO }
 
     @Id
     private UUID id;

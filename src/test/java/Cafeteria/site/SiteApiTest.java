@@ -192,6 +192,36 @@ class SiteApiTest extends IntegrationTestSupport {
     }
 
     @Test
+    void elLogoSeGuardaSeDevuelveYSeLimpiaAlQuitarlo() throws Exception {
+        MediaAsset logo = uploadDirect(a);
+        mvc.perform(write(put("/api/v1/admin/site/images"), ownerA, "{\"logo\":\"%s\"}".formatted(logo.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.images.logo.id").value(logo.getId().toString()))
+                .andExpect(jsonPath("$.images.logo.url").value("/media/" + logo.getId()))
+                .andExpect(jsonPath("$.images.hero").doesNotExist());
+
+        mvc.perform(get("/api/v1/admin/site").cookie(editorA))
+                .andExpect(jsonPath("$.images.logo.id").value(logo.getId().toString()));
+
+        mvc.perform(get("/api/v1/auth/me").cookie(editorA))
+                .andExpect(jsonPath("$.tenant.logoUrl").value("/media/" + logo.getId()));
+
+        mvc.perform(write(put("/api/v1/admin/site/images"), ownerA, "{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.images.logo").doesNotExist());
+        assertThat(assets.findById(logo.getId())).isEmpty();
+        mvc.perform(get("/api/v1/auth/me").cookie(editorA))
+                .andExpect(jsonPath("$.tenant.logoUrl").doesNotExist());
+    }
+
+    @Test
+    void elLogoDeOtroNegocioSeRechaza() throws Exception {
+        MediaAsset ajeno = uploadDirect(b);
+        mvc.perform(write(put("/api/v1/admin/site/images"), ownerA, "{\"logo\":\"%s\"}".formatted(ajeno.getId())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void reemplazarLasImagenesLimpiaLasQueQuedanLibres() throws Exception {
         MediaAsset vieja = uploadDirect(a);
         MediaAsset nueva = uploadDirect(a);

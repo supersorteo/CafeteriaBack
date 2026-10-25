@@ -55,7 +55,7 @@ public final class SiteDtos {
 
     public record GalleryRef(UUID id, String url, String alt) {}
 
-    public record SiteImagesResponse(ImageRef hero, List<ImageRef> about, List<GalleryRef> gallery) {}
+    public record SiteImagesResponse(ImageRef hero, List<ImageRef> about, List<GalleryRef> gallery, ImageRef logo) {}
 
     public record StatRef(String label, int value) {}
 
@@ -73,7 +73,8 @@ public final class SiteDtos {
     public record SiteImagesRequest(
             UUID hero,
             @Size(max = 3) List<UUID> about,
-            @Size(max = 6) List<@Valid GalleryImageRequest> gallery) {}
+            @Size(max = 6) List<@Valid GalleryImageRequest> gallery,
+            UUID logo) {}
 
     public record PublicationRequest(@NotNull Boolean published, Long version) {}
 
