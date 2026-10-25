@@ -12,6 +12,7 @@ WORKDIR /app
 COPY --from=build /app/app.jar /app/app.jar
 USER appuser
 ENV SPRING_PROFILES_ACTIVE=production \
+    SPRING_CONFIG_LOCATION=classpath:/application-production.properties \
     JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Duser.timezone=UTC"
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

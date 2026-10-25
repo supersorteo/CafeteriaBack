@@ -47,9 +47,9 @@ class ProductionProfileConfigTest {
 
     @Test
     void laBaseDeDatosAdmiteLasVariablesDeRailway() {
-        assertThat(get("spring.datasource.url")).contains("${DB_URL:").contains("PGHOST").contains("PGDATABASE");
-        assertThat(get("spring.datasource.username")).contains("PGUSER");
-        assertThat(get("spring.datasource.password")).contains("PGPASSWORD");
+        assertThat(get("spring.datasource.url")).isEqualTo("${DB_URL}");
+        assertThat(get("spring.datasource.username")).isEqualTo("${DB_USER}");
+        assertThat(get("spring.datasource.password")).isEqualTo("${DB_PASSWORD}");
         assertThat(get("server.port")).isEqualTo("${PORT:8080}");
     }
 
@@ -72,11 +72,11 @@ class ProductionProfileConfigTest {
     }
 
     @Test
-    void confiaEnLosProxiesYUsaCloudinaryYGmailPorDefecto() {
+    void confiaEnLosProxiesYUsaCloudinaryYSmtpPorDefecto() {
         assertThat(get("server.forward-headers-strategy")).isEqualTo("framework");
         assertThat(get("security.trust-forwarded-for")).isEqualTo("true");
         assertThat(get("media.storage")).isEqualTo("cloudinary");
-        assertThat(get("mail.sender")).isEqualTo("${MAIL_SENDER:gmail-api}");
+        assertThat(get("mail.sender")).isEqualTo("${MAIL_SENDER:smtp}");
     }
 
     @Test
