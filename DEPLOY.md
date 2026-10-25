@@ -1,6 +1,6 @@
 # Backend en Railway
 
-Guía completa: `docs/deployment.md` del proyecto (Gmail, Vercel, copias de seguridad, riesgos).
+Guía completa: `docs/deployment.md` en el repositorio del frontend (`Cafeteria`): Gmail, Vercel, copias de seguridad y riesgos.
 
 ## Archivos
 - `Dockerfile`: compila con Maven y ejecuta con Java 21 como usuario sin privilegios (`SPRING_PROFILES_ACTIVE=production`).
