@@ -1,5 +1,5 @@
 HELP.md
-# Configuración local con contraseñas: no se versiona (usa application.properties.example)
+# Configuración local alternativa (no se versiona)
 application-local.properties
 uploads/
 .env
