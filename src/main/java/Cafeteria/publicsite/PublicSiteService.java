@@ -23,13 +23,15 @@ import Cafeteria.publicsite.PublicSiteDtos.GalleryItem;
 import Cafeteria.publicsite.PublicSiteDtos.Hero;
 import Cafeteria.publicsite.PublicSiteDtos.Highlight;
 import Cafeteria.publicsite.PublicSiteDtos.Reservation;
+import Cafeteria.publicsite.PublicSiteDtos.Space;
 import Cafeteria.publicsite.PublicSiteDtos.Stat;
 import Cafeteria.publicsite.PublicSiteDtos.Item;
 import Cafeteria.publicsite.PublicSiteDtos.PublicCategory;
 import Cafeteria.publicsite.PublicSiteDtos.PublicSite;
 import Cafeteria.publicsite.PublicSiteDtos.Theme;
 import Cafeteria.shared.ApiException;
-import Cafeteria.site.SiteHighlightRepository;
+import Cafeteria.site.SiteSpace;
+import Cafeteria.site.SiteSpaceRepository;
 import Cafeteria.site.SiteImage;
 import Cafeteria.site.SiteImageRepository;
 import Cafeteria.site.SiteStatRepository;
@@ -44,18 +46,18 @@ public class PublicSiteService {
     private final MenuItemRepository items;
     private final SiteImageRepository siteImages;
     private final SiteStatRepository siteStats;
-    private final SiteHighlightRepository siteHighlights;
+    private final SiteSpaceRepository siteSpaces;
     private final MediaService media;
 
     public PublicSiteService(TenantRepository tenants, CategoryRepository categories, MenuItemRepository items,
-            SiteImageRepository siteImages, SiteStatRepository siteStats, SiteHighlightRepository siteHighlights,
+            SiteImageRepository siteImages, SiteStatRepository siteStats, SiteSpaceRepository siteSpaces,
             MediaService media) {
         this.tenants = tenants;
         this.categories = categories;
         this.items = items;
         this.siteImages = siteImages;
         this.siteStats = siteStats;
-        this.siteHighlights = siteHighlights;
+        this.siteSpaces = siteSpaces;
         this.media = media;
     }
 
@@ -69,8 +71,11 @@ public class PublicSiteService {
         List<MenuItem> itemRows = items.findByTenantIdAndActiveTrueOrderBySortOrderAscIdAsc(tenantId);
         List<SiteImage> imageRows = siteImages.findByTenantIdOrderBySlotAscPositionAsc(tenantId);
 
-        List<UUID> mediaIds = Stream.concat(itemRows.stream().map(MenuItem::getImageId),
-                imageRows.stream().map(SiteImage::getMediaId)).filter(java.util.Objects::nonNull).distinct().toList();
+        List<SiteSpace> spaceRows = siteSpaces.findByTenantIdOrderByPositionAsc(tenantId);
+
+        List<UUID> mediaIds = Stream.of(itemRows.stream().map(MenuItem::getImageId),
+                imageRows.stream().map(SiteImage::getMediaId), spaceRows.stream().map(SiteSpace::getMediaId))
+                .flatMap(s -> s).filter(java.util.Objects::nonNull).distinct().toList();
         Map<UUID, String> urls = new HashMap<>();
         for (MediaAsset asset : media.byIds(tenantId, mediaIds).values()) {
             urls.put(asset.getId(), asset.getPublicUrl());
@@ -102,6 +107,10 @@ public class PublicSiteService {
             }
         }
 
+        List<Space> spaces = spaceRows.stream()
+                .map(sp -> new Space(sp.getName(), sp.getDescription(), urls.get(sp.getMediaId()), sp.isBookable()))
+                .toList();
+
         return new PublicSite(tenant.getSlug(), tenant.getName(), tenant.getDescriptor(), tenant.getTagline(),
                 tenant.getFooterText(), tenant.getCurrency(), tenant.getLocale(), tenant.getTimezone(),
                 new Theme(tenant.getPrimaryColor(), tenant.getAccentColor()),
@@ -112,9 +121,9 @@ public class PublicSiteService {
                 List.copyOf(tenant.getMarqueeItems()),
                 siteStats.findByTenantIdOrderByPositionAsc(tenantId).stream()
                         .map(st -> new Stat(st.getLabel(), st.getValue())).toList(),
-                siteHighlights.findByTenantIdOrderByPositionAsc(tenantId).stream()
-                        .map(h -> new Highlight(h.getTitle(), h.getDescription())).toList(),
-                new Reservation(List.copyOf(tenant.getReservationAreas()), List.copyOf(tenant.getPartySizes())),
-                publicCategories, logoUrl);
+                spaces.stream().map(sp -> new Highlight(sp.name(), sp.description())).toList(),
+                new Reservation(spaces.stream().filter(Space::bookable).map(Space::name).toList(),
+                        List.copyOf(tenant.getPartySizes())),
+                publicCategories, logoUrl, spaces);
     }
 }

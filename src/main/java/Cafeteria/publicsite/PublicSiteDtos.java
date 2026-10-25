@@ -22,6 +22,8 @@ public final class PublicSiteDtos {
 
     public record Highlight(String title, String description) {}
 
+    public record Space(String name, String description, String imageUrl, boolean bookable) {}
+
     public record Reservation(List<String> areas, List<String> partySizes) {}
 
     public record Item(UUID id, String name, String description, BigDecimal price, String tag, String imageUrl) {}
@@ -31,5 +33,5 @@ public final class PublicSiteDtos {
     public record PublicSite(String slug, String name, String descriptor, String tagline, String footerText,
             String currency, String locale, String timezone, Theme theme, Contact contact, Hero hero, About about,
             List<GalleryItem> gallery, List<String> marquee, List<Stat> stats, List<Highlight> highlights,
-            Reservation reservation, List<PublicCategory> categories, String logoUrl) {}
+            Reservation reservation, List<PublicCategory> categories, String logoUrl, List<Space> spaces) {}
 }

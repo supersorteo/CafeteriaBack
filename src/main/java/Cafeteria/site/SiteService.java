@@ -41,19 +41,19 @@ public class SiteService {
     private final TenantRepository tenants;
     private final SiteImageRepository siteImages;
     private final SiteStatRepository siteStats;
-    private final SiteHighlightRepository siteHighlights;
+    private final SiteSpaceRepository siteSpaces;
     private final MediaService media;
     private final MediaAssetRepository assets;
     private final CategoryRepository categories;
     private final MenuItemRepository items;
 
     public SiteService(TenantRepository tenants, SiteImageRepository siteImages, SiteStatRepository siteStats,
-            SiteHighlightRepository siteHighlights, MediaService media, MediaAssetRepository assets,
+            SiteSpaceRepository siteSpaces, MediaService media, MediaAssetRepository assets,
             CategoryRepository categories, MenuItemRepository items) {
         this.tenants = tenants;
         this.siteImages = siteImages;
         this.siteStats = siteStats;
-        this.siteHighlights = siteHighlights;
+        this.siteSpaces = siteSpaces;
         this.media = media;
         this.assets = assets;
         this.categories = categories;
@@ -99,11 +99,10 @@ public class SiteService {
         tenant.setFooterText(blankToNull(request.footerText()));
         tenant.setHeroCaption(blankToNull(request.heroCaption()));
         tenant.setMarqueeItems(strip(request.marqueeItems()));
-        tenant.setReservationAreas(strip(request.reservationAreas()));
         tenant.setPartySizes(strip(request.partySizes()));
         Tenant saved = tenants.saveAndFlush(tenant);
         replaceStats(tenantId, request.stats());
-        replaceHighlights(tenantId, request.highlights());
+        replaceSpaces(tenantId, request.spaces());
         return respond(saved);
     }
 
@@ -117,15 +116,38 @@ public class SiteService {
         siteStats.saveAllAndFlush(rows);
     }
 
-    private void replaceHighlights(UUID tenantId, List<SiteDtos.HighlightRequest> highlights) {
-        siteHighlights.deleteAllByTenantId(tenantId);
-        List<SiteDtos.HighlightRequest> source = highlights == null ? List.of() : highlights;
-        List<SiteHighlight> rows = new ArrayList<>();
-        for (int i = 0; i < source.size(); i++) {
-            rows.add(new SiteHighlight(tenantId, i, source.get(i).title().strip(),
-                    blankToNull(source.get(i).description())));
+    private void replaceSpaces(UUID tenantId, List<SiteDtos.SpaceRequest> spaces) {
+        List<SiteDtos.SpaceRequest> source = spaces == null ? List.of() : spaces;
+        Set<String> names = new HashSet<>();
+        for (SiteDtos.SpaceRequest space : source) {
+            if (!names.add(space.name().strip().toLowerCase())) {
+                throw ApiException.invalidField("spaces", "Dos espacios no pueden llamarse igual: " + space.name().strip());
+            }
         }
-        siteHighlights.saveAllAndFlush(rows);
+        Set<UUID> requested = source.stream().map(SiteDtos.SpaceRequest::imageId).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        media.lockTenant(tenantId);
+        Map<UUID, MediaAsset> found = media.byIds(tenantId, requested);
+        for (UUID id : requested) {
+            MediaAsset asset = found.get(id);
+            if (asset == null || asset.getStatus() != MediaAsset.Status.READY) {
+                throw ApiException.invalidField("spaces", "La imagen " + id + " no existe en este negocio");
+            }
+        }
+
+        Set<UUID> previous = siteSpaces.findByTenantIdOrderByPositionAsc(tenantId).stream()
+                .map(SiteSpace::getMediaId).filter(Objects::nonNull).collect(Collectors.toCollection(HashSet::new));
+        siteSpaces.deleteAllByTenantId(tenantId);
+        List<SiteSpace> rows = new ArrayList<>();
+        for (int i = 0; i < source.size(); i++) {
+            SiteDtos.SpaceRequest space = source.get(i);
+            rows.add(new SiteSpace(tenantId, i, space.name().strip(), blankToNull(space.description()), space.imageId(),
+                    space.bookable() == null || space.bookable()));
+        }
+        siteSpaces.saveAllAndFlush(rows);
+
+        previous.removeAll(requested);
+        previous.forEach(id -> media.deleteIfUnreferenced(tenantId, id));
     }
 
     private static List<String> strip(List<String> values) {
@@ -208,16 +230,17 @@ public class SiteService {
     }
 
     private SiteSettingsResponse respond(Tenant t) {
+        List<SiteDtos.SpaceRef> spaces = spacesOf(t.getId());
         return new SiteSettingsResponse(t.getSlug(), t.isPublished(), t.getName(), t.getWhatsappNumber(), t.getPhone(),
                 t.getEmail(), t.getAddress(), t.getSchedule(), t.getCurrency(), t.getLocale(), t.getTimezone(),
                 t.getPrimaryColor(), t.getAccentColor(), t.getHeroTitle(), t.getHeroDescription(), t.getAboutText(),
                 t.getVersion(), imagesOf(t.getId()), t.getDescriptor(), t.getTagline(), t.getAboutTitle(),
                 t.getFooterText(), t.getHeroCaption(), List.copyOf(t.getMarqueeItems()),
-                List.copyOf(t.getReservationAreas()), List.copyOf(t.getPartySizes()),
+                spaces.stream().filter(SiteDtos.SpaceRef::bookable).map(SiteDtos.SpaceRef::name).toList(),
+                List.copyOf(t.getPartySizes()),
                 siteStats.findByTenantIdOrderByPositionAsc(t.getId()).stream()
                         .map(s -> new SiteDtos.StatRef(s.getLabel(), s.getValue())).toList(),
-                siteHighlights.findByTenantIdOrderByPositionAsc(t.getId()).stream()
-                        .map(h -> new SiteDtos.HighlightRef(h.getTitle(), h.getDescription())).toList());
+                spaces.stream().map(sp -> new SiteDtos.HighlightRef(sp.name(), sp.description())).toList(), spaces);
     }
 
     @Transactional(readOnly = true)
@@ -226,6 +249,17 @@ public class SiteService {
                 .filter(row -> row.getSlot() == SiteImage.Slot.LOGO).findFirst()
                 .flatMap(row -> Optional.ofNullable(media.byIds(tenantId, List.of(row.getMediaId())).get(row.getMediaId())))
                 .map(MediaAsset::getPublicUrl).orElse(null);
+    }
+
+    private List<SiteDtos.SpaceRef> spacesOf(UUID tenantId) {
+        List<SiteSpace> rows = siteSpaces.findByTenantIdOrderByPositionAsc(tenantId);
+        Map<UUID, MediaAsset> byId = media.byIds(tenantId,
+                rows.stream().map(SiteSpace::getMediaId).filter(Objects::nonNull).toList());
+        return rows.stream().map(row -> {
+            MediaAsset asset = row.getMediaId() == null ? null : byId.get(row.getMediaId());
+            return new SiteDtos.SpaceRef(row.getId(), row.getName(), row.getDescription(),
+                    asset == null ? null : new ImageRef(asset.getId(), asset.getPublicUrl()), row.isBookable());
+        }).toList();
     }
 
     private SiteImagesResponse imagesOf(UUID tenantId) {

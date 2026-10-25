@@ -10,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.Collections;
-import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,10 +47,11 @@ class SiteContentTest extends IntegrationTestSupport {
 
     private static final String FULL = "\"descriptor\":\"Bar & Cocina\",\"tagline\":\"Desde 2012\","
             + "\"aboutTitle\":\"Tradición, *fuego*\\ny compañía\",\"footerText\":\"Pie\",\"heroCaption\":\"Una noche\","
-            + "\"marqueeItems\":[\"Uno\",\"Dos\"],\"reservationAreas\":[\"Terraza\",\"Barra\"],"
+            + "\"marqueeItems\":[\"Uno\",\"Dos\"],"
             + "\"partySizes\":[\"2\",\"4\",\"+10\"],"
             + "\"stats\":[{\"label\":\"Años\",\"value\":14},{\"label\":\"Destilados\",\"value\":120}],"
-            + "\"highlights\":[{\"title\":\"Terraza\",\"description\":\"Aire libre\"}]";
+            + "\"spaces\":[{\"name\":\"Terraza\",\"description\":\"Aire libre\"},{\"name\":\"Barra\"},"
+            + "{\"name\":\"Happy hour\",\"bookable\":false}]";
 
     @Test
     void elOwnerGuardaElContenidoYSeLeeDeVuelta() throws Exception {
@@ -63,6 +63,10 @@ class SiteContentTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.partySizes", contains("2", "4", "+10")))
                 .andExpect(jsonPath("$.stats[1].label").value("Destilados"))
                 .andExpect(jsonPath("$.stats[1].value").value(120))
+                .andExpect(jsonPath("$.spaces", hasSize(3)))
+                .andExpect(jsonPath("$.spaces[0].name").value("Terraza"))
+                .andExpect(jsonPath("$.spaces[0].bookable").value(true))
+                .andExpect(jsonPath("$.spaces[2].bookable").value(false))
                 .andExpect(jsonPath("$.highlights[0].title").value("Terraza"));
 
         mvc.perform(get("/api/v1/admin/site").cookie(editorA))
@@ -82,7 +86,7 @@ class SiteContentTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.tagline").doesNotExist());
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM site_stats", Long.class)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM site_highlights", Long.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM site_spaces", Long.class)).isZero();
     }
 
     @Test
@@ -104,8 +108,16 @@ class SiteContentTest extends IntegrationTestSupport {
                 + "{\"label\":\"c\",\"value\":3},{\"label\":\"d\",\"value\":4}]")).andExpect(status().isBadRequest());
         mvc.perform(write(ownerA, "\"stats\":[{\"label\":\"a\",\"value\":-1}]")).andExpect(status().isBadRequest());
         mvc.perform(write(ownerA, "\"stats\":[{\"label\":\"a\",\"value\":1000000}]")).andExpect(status().isBadRequest());
-        mvc.perform(write(ownerA, "\"highlights\":[{\"title\":\"\",\"description\":\"d\"}]"))
+        mvc.perform(write(ownerA, "\"spaces\":[{\"name\":\"\",\"description\":\"d\"}]"))
                 .andExpect(status().isBadRequest());
+        mvc.perform(write(ownerA, "\"spaces\":[{\"name\":\"" + "x".repeat(61) + "\"}]")).andExpect(status().isBadRequest());
+        mvc.perform(write(ownerA, "\"spaces\":[{\"name\":\"a\",\"description\":\"" + "x".repeat(201) + "\"}]"))
+                .andExpect(status().isBadRequest());
+        String once = String.join(",", java.util.stream.IntStream.range(0, 11).mapToObj(i -> "{\"name\":\"E" + i + "\"}").toList());
+        mvc.perform(write(ownerA, "\"spaces\":[" + once + "]")).andExpect(status().isBadRequest());
+        mvc.perform(write(ownerA, "\"spaces\":[{\"name\":\"Terraza\"},{\"name\":\" terraza \"}]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[*].field", hasItem("spaces")));
         mvc.perform(write(ownerA, "\"tagline\":\"" + "x".repeat(161) + "\"")).andExpect(status().isBadRequest());
         mvc.perform(write(ownerA, "\"partySizes\":[\"" + "9".repeat(21) + "\"]")).andExpect(status().isBadRequest());
 
@@ -132,6 +144,10 @@ class SiteContentTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.highlights[0].description").value("Aire libre"))
                 .andExpect(jsonPath("$.reservation.areas", contains("Terraza", "Barra")))
                 .andExpect(jsonPath("$.reservation.partySizes", hasSize(3)))
+                .andExpect(jsonPath("$.spaces", hasSize(3)))
+                .andExpect(jsonPath("$.spaces[0].bookable").value(true))
+                .andExpect(jsonPath("$.spaces[2].name").value("Happy hour"))
+                .andExpect(jsonPath("$.spaces[2].bookable").value(false))
                 .andExpect(jsonPath("$.theme.primaryColor").value("#112233"));
     }
 
@@ -148,8 +164,9 @@ class SiteContentTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.stats", hasSize(0)))
                 .andExpect(jsonPath("$.highlights", hasSize(0)))
                 .andExpect(jsonPath("$.reservation.areas", hasSize(0)))
+                .andExpect(jsonPath("$.spaces", hasSize(0)))
                 .andExpect(jsonPath("$.categories", hasSize(0)))
                 .andExpect(jsonPath("$.tagline").doesNotExist());
-        assertThat(List.of(a.getMarqueeItems(), a.getReservationAreas())).allMatch(List::isEmpty);
+        assertThat(a.getMarqueeItems()).isEmpty();
     }
 }

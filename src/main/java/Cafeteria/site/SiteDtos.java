@@ -20,9 +20,11 @@ public final class SiteDtos {
             @NotBlank @Size(max = 40) String label,
             @NotNull @Min(0) @Max(999999) Integer value) {}
 
-    public record HighlightRequest(
-            @NotBlank @Size(max = 60) String title,
-            @Size(max = 200) String description) {}
+    public record SpaceRequest(
+            @NotBlank @Size(max = 60) String name,
+            @Size(max = 200) String description,
+            UUID imageId,
+            Boolean bookable) {}
 
     public record SiteSettingsRequest(
             @NotBlank @Size(max = 120) String name,
@@ -46,10 +48,9 @@ public final class SiteDtos {
             @Size(max = 200) String footerText,
             @Size(max = 80) String heroCaption,
             @Size(max = 8) List<@NotBlank @Size(max = 80) String> marqueeItems,
-            @Size(max = 8) List<@NotBlank @Size(max = 40) String> reservationAreas,
             @Size(max = 10) List<@NotBlank @Size(max = 20) String> partySizes,
             @Size(max = 3) List<@Valid StatRequest> stats,
-            @Size(max = 3) List<@Valid HighlightRequest> highlights) {}
+            @Size(max = 10) List<@Valid SpaceRequest> spaces) {}
 
     public record ImageRef(UUID id, String url) {}
 
@@ -61,12 +62,14 @@ public final class SiteDtos {
 
     public record HighlightRef(String title, String description) {}
 
+    public record SpaceRef(UUID id, String name, String description, ImageRef image, boolean bookable) {}
+
     public record SiteSettingsResponse(String slug, boolean published, String name, String whatsappNumber, String phone,
             String email, String address, String schedule, String currency, String locale, String timezone,
             String primaryColor, String accentColor, String heroTitle, String heroDescription, String aboutText,
             long version, SiteImagesResponse images, String descriptor, String tagline, String aboutTitle,
             String footerText, String heroCaption, List<String> marqueeItems, List<String> reservationAreas,
-            List<String> partySizes, List<StatRef> stats, List<HighlightRef> highlights) {}
+            List<String> partySizes, List<StatRef> stats, List<HighlightRef> highlights, List<SpaceRef> spaces) {}
 
     public record GalleryImageRequest(@NotNull UUID mediaId, @Size(max = 200) String alt) {}
 

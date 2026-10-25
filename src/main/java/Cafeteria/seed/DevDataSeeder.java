@@ -28,8 +28,8 @@ import Cafeteria.catalog.MenuItem;
 import Cafeteria.catalog.MenuItemRepository;
 import Cafeteria.media.MediaAssetRepository;
 import Cafeteria.media.MediaService;
-import Cafeteria.site.SiteHighlight;
-import Cafeteria.site.SiteHighlightRepository;
+import Cafeteria.site.SiteSpace;
+import Cafeteria.site.SiteSpaceRepository;
 import Cafeteria.site.SiteImage;
 import Cafeteria.site.SiteImageRepository;
 import Cafeteria.site.SiteStat;
@@ -61,7 +61,7 @@ public class DevDataSeeder implements ApplicationRunner {
     private final MediaAssetRepository assets;
     private final SiteImageRepository siteImages;
     private final SiteStatRepository siteStats;
-    private final SiteHighlightRepository siteHighlights;
+    private final SiteSpaceRepository siteSpaces;
     private final Map<String, UUID> demoMedia = new HashMap<>();
     private final String password;
     private final String imagesDir;
@@ -69,7 +69,7 @@ public class DevDataSeeder implements ApplicationRunner {
     public DevDataSeeder(TenantRepository tenants, UserRepository users, TenantUserRepository memberships,
             CategoryRepository categories, MenuItemRepository menuItems, PasswordEncoder encoder,
             TransactionTemplate tx, MediaService media, MediaAssetRepository assets,
-            SiteImageRepository siteImages, SiteStatRepository siteStats, SiteHighlightRepository siteHighlights,
+            SiteImageRepository siteImages, SiteStatRepository siteStats, SiteSpaceRepository siteSpaces,
             @Value("${seed.dev.password:}") String password,
             @Value("${seed.dev.images-dir:../../BAR-LA-TERRAZA/public/images}") String imagesDir) {
         this.tenants = tenants;
@@ -83,7 +83,7 @@ public class DevDataSeeder implements ApplicationRunner {
         this.assets = assets;
         this.siteImages = siteImages;
         this.siteStats = siteStats;
-        this.siteHighlights = siteHighlights;
+        this.siteSpaces = siteSpaces;
         this.password = password;
         this.imagesDir = imagesDir;
     }
@@ -183,13 +183,18 @@ public class DevDataSeeder implements ApplicationRunner {
             siteStats.save(new SiteStat(tenant.getId(), 1, "Destilados", 120));
             siteStats.save(new SiteStat(tenant.getId(), 2, "Platos y cocteles", 35));
         }
-        if (siteHighlights.findByTenantIdOrderByPositionAsc(tenant.getId()).isEmpty()) {
-            siteHighlights.save(new SiteHighlight(tenant.getId(), 0, "Terraza exterior",
-                    "Aire libre, luz cálida y música en vivo los viernes."));
-            siteHighlights.save(new SiteHighlight(tenant.getId(), 1, "Salón privado",
-                    "Hasta 20 personas. Ideal celebraciones y eventos."));
-            siteHighlights.save(new SiteHighlight(tenant.getId(), 2, "Happy hour",
-                    "Martes a jueves, 6 a 8 pm. 2x1 en cocteles de la casa."));
+        if (siteSpaces.findByTenantIdOrderByPositionAsc(tenant.getId()).isEmpty()) {
+            Path dir = Path.of(imagesDir);
+            siteSpaces.save(new SiteSpace(tenant.getId(), 0, "Terraza exterior",
+                    "Aire libre, luz cálida y música en vivo los viernes.", demoSpaceMedia(tenant, dir, "restaurant"), true));
+            siteSpaces.save(new SiteSpace(tenant.getId(), 1, "Salón interior",
+                    "Ambiente tranquilo para cenar y conversar.", demoSpaceMedia(tenant, dir, "steak"), true));
+            siteSpaces.save(new SiteSpace(tenant.getId(), 2, "Barra",
+                    "Cocteles de autor preparados frente a ti.", demoSpaceMedia(tenant, dir, "negroni"), true));
+            siteSpaces.save(new SiteSpace(tenant.getId(), 3, "Salón privado",
+                    "Hasta 20 personas. Ideal celebraciones y eventos.", null, true));
+            siteSpaces.save(new SiteSpace(tenant.getId(), 4, "Happy hour",
+                    "Martes a jueves, 6 a 8 pm. 2x1 en cocteles de la casa.", null, false));
         }
         if (siteImages.findByTenantIdOrderBySlotAscPositionAsc(tenant.getId()).isEmpty()) {
             Path dir = Path.of(imagesDir);
@@ -204,6 +209,10 @@ public class DevDataSeeder implements ApplicationRunner {
             addSiteImage(tenant, dir, SiteImage.Slot.GALLERY, 1, "margarita", "Cóctel fresco preparado al momento");
             addSiteImage(tenant, dir, SiteImage.Slot.GALLERY, 2, "wings", "Botana de alitas para compartir");
         }
+    }
+
+    private UUID demoSpaceMedia(Tenant tenant, Path dir, String file) {
+        return Files.isDirectory(dir) ? demoMedia.computeIfAbsent(file, f -> upload(tenant, dir.resolve(f + ".jpg"))) : null;
     }
 
     private void addSiteImage(Tenant tenant, Path dir, SiteImage.Slot slot, int position, String file, String alt) {

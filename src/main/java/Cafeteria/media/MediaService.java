@@ -116,8 +116,9 @@ public class MediaService {
 
     public boolean isReferenced(UUID tenantId, UUID mediaId) {
         Integer count = jdbc.queryForObject("SELECT (SELECT count(*) FROM menu_items WHERE tenant_id = ? AND image_id = ?) "
-                + "+ (SELECT count(*) FROM site_images WHERE tenant_id = ? AND media_id = ?)",
-                Integer.class, tenantId, mediaId, tenantId, mediaId);
+                + "+ (SELECT count(*) FROM site_images WHERE tenant_id = ? AND media_id = ?) "
+                + "+ (SELECT count(*) FROM site_spaces WHERE tenant_id = ? AND media_id = ?)",
+                Integer.class, tenantId, mediaId, tenantId, mediaId, tenantId, mediaId);
         return count != null && count > 0;
     }
 
@@ -128,7 +129,8 @@ public class MediaService {
     List<MediaAsset> staleUnreferenced(int graceHours) {
         return jdbc.query("SELECT id FROM media_assets m WHERE m.created_at < now() - make_interval(hours => ?) "
                 + "AND NOT EXISTS (SELECT 1 FROM menu_items i WHERE i.tenant_id = m.tenant_id AND i.image_id = m.id) "
-                + "AND NOT EXISTS (SELECT 1 FROM site_images s WHERE s.tenant_id = m.tenant_id AND s.media_id = m.id)",
+                + "AND NOT EXISTS (SELECT 1 FROM site_images s WHERE s.tenant_id = m.tenant_id AND s.media_id = m.id) "
+                + "AND NOT EXISTS (SELECT 1 FROM site_spaces sp WHERE sp.tenant_id = m.tenant_id AND sp.media_id = m.id)",
                 (rs, i) -> rs.getObject("id", UUID.class), graceHours)
                 .stream().map(assets::findById).flatMap(java.util.Optional::stream).toList();
     }
