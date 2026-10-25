@@ -6,12 +6,14 @@ import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.csrf.CsrfException;
@@ -37,6 +39,39 @@ public class SecurityConfig {
     }
 
     @Bean
+    @Order(1)
+    SecurityFilterChain superAdminFilterChain(HttpSecurity http,
+            @Value("${security.superadmin.max-attempts:5}") int maxAttempts,
+            @Value("${security.superadmin.window-minutes:15}") int windowMinutes,
+            @Value("${security.trust-forwarded-for:false}") boolean trustForwardedFor,
+            @Value("${security.global-limit-factor:10}") int globalLimitFactor) throws Exception {
+        Function<HttpServletRequest, String> clientKey = request -> ClientIp.resolve(request, trustForwardedFor);
+        String loginPath = API + "/superadmin/auth/login";
+        String verifyPath = API + "/superadmin/auth/verify";
+        http
+                .securityMatcher(API + "/superadmin/**")
+                .csrf(csrf -> csrf.spa())
+                .cors(cors -> cors.disable())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.POST, loginPath, verifyPath).permitAll()
+                        .anyRequest().hasRole("SUPERADMIN"))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, exception) -> ProblemResponses.write(response,
+                                HttpStatus.UNAUTHORIZED, "unauthenticated", "Sesión requerida"))
+                        .accessDeniedHandler((request, response, exception) -> ProblemResponses.write(response,
+                                HttpStatus.FORBIDDEN,
+                                exception instanceof CsrfException ? "csrf_invalid" : "forbidden",
+                                exception instanceof CsrfException ? "Token CSRF ausente o inválido"
+                                        : "Operación no permitida")))
+                .addFilterBefore(new RateLimitFilter(loginPath, maxAttempts, Duration.ofMinutes(windowMinutes), clientKey,
+                        globalCeiling(maxAttempts, globalLimitFactor)), AuthorizationFilter.class)
+                .addFilterBefore(new RateLimitFilter(verifyPath, maxAttempts * 2, Duration.ofMinutes(windowMinutes), clientKey,
+                        globalCeiling(maxAttempts * 2, globalLimitFactor)), AuthorizationFilter.class);
+        return http.build();
+    }
+
+    @Bean
+    @Order(2)
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             @Value("${security.login.max-attempts:10}") int maxAttempts,
             @Value("${security.login.window-minutes:15}") int windowMinutes,

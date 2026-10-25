@@ -105,7 +105,7 @@ public abstract class IntegrationTestSupport {
         FileSystemUtils.deleteRecursively(uploadRoot());
         mail.reset();
         jdbc.execute("TRUNCATE site_images, menu_items, categories, media_assets, tenant_users, account_tokens, "
-                + "email_outbox, tenants, users CASCADE");
+                + "email_outbox, audit_log, tenants, users CASCADE");
         jdbc.execute("TRUNCATE spring_session CASCADE");
     }
 

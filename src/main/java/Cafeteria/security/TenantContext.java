@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import Cafeteria.auth.User;
 import Cafeteria.auth.UserRepository;
 import Cafeteria.tenant.Role;
+import Cafeteria.tenant.TenantRepository;
 import Cafeteria.tenant.TenantUser;
 import Cafeteria.tenant.TenantUserRepository;
 
@@ -21,10 +22,12 @@ public class TenantContext {
 
     private final UserRepository users;
     private final TenantUserRepository memberships;
+    private final TenantRepository tenants;
 
-    public TenantContext(UserRepository users, TenantUserRepository memberships) {
+    public TenantContext(UserRepository users, TenantUserRepository memberships, TenantRepository tenants) {
         this.users = users;
         this.memberships = memberships;
+        this.tenants = tenants;
     }
 
     public Current require() {
@@ -37,6 +40,9 @@ public class TenantContext {
                 .orElseThrow(() -> new InsufficientAuthenticationException("Cuenta no disponible"));
         TenantUser membership = memberships.findByUserId(user.getId())
                 .orElseThrow(() -> new InsufficientAuthenticationException("Sin negocio asignado"));
+        if (!tenants.existsByIdAndSuspendedAtIsNull(membership.getTenantId())) {
+            throw new InsufficientAuthenticationException("Negocio suspendido");
+        }
         return new Current(user.getId(), membership.getTenantId(), membership.getRole());
     }
 

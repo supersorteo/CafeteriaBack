@@ -14,4 +14,6 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
     List<MediaAsset> findByIdInAndTenantId(Collection<UUID> ids, UUID tenantId);
 
     long countByTenantId(UUID tenantId);
+
+    List<MediaAsset> findByTenantId(UUID tenantId);
 }

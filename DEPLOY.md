@@ -18,6 +18,7 @@ Guía completa: `docs/deployment.md` en el repositorio del frontend (`Cafeteria`
 | `MAIL_FROM` | sí | tu Gmail |
 | `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` | con `gmail-api` (por defecto) | ver `docs/deployment.md` |
 | `REGISTRATION_ENABLED` | no (por defecto `false`) | `true` |
+| `SUPERADMIN_EMAIL` `SUPERADMIN_PASSWORD` | no (sin ellas no existe el panel de superadmin) | tu Gmail de empresa; contraseña de 8+ caracteres |
 | `MAIL_SENDER` | no | `gmail-api` o `smtp` (SMTP solo en el plan Pro de Railway) |
 | `DB_POOL_SIZE` | no | `10` |
 

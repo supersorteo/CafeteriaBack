@@ -107,6 +107,7 @@ public class MediaService {
     @Transactional(readOnly = true)
     public MediaAsset findPublic(UUID id) {
         return assets.findById(id).filter(a -> a.getStatus() == MediaAsset.Status.READY)
+                .filter(a -> tenants.existsByIdAndSuspendedAtIsNull(a.getTenantId()))
                 .orElseThrow(() -> ApiException.notFound("Imagen no encontrada"));
     }
 
@@ -149,6 +150,25 @@ public class MediaService {
 
     void deleteFile(String storageKey) {
         deleteQuietly(storageKey);
+    }
+
+    @Transactional
+    public int deleteAllOfTenant(UUID tenantId) {
+        List<MediaAsset> all = assets.findByTenantId(tenantId);
+        List<String> keys = all.stream().map(MediaAsset::getStorageKey).toList();
+        assets.deleteAll(all);
+        assets.flush();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    keys.forEach(key -> deleteQuietly(key));
+                }
+            });
+        } else {
+            keys.forEach(this::deleteQuietly);
+        }
+        return keys.size();
     }
 
     private void remove(MediaAsset asset) {

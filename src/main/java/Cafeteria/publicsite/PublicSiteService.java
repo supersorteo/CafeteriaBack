@@ -63,7 +63,7 @@ public class PublicSiteService {
 
     @Transactional(readOnly = true)
     public PublicSite get(String slug) {
-        Tenant tenant = tenants.findBySlug(slug).filter(Tenant::isPublished)
+        Tenant tenant = tenants.findBySlug(slug).filter(Tenant::isPublished).filter(t -> t.getSuspendedAt() == null)
                 .orElseThrow(() -> ApiException.notFound("Sitio no encontrado"));
         UUID tenantId = tenant.getId();
 

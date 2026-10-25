@@ -94,6 +94,9 @@ public class Tenant {
     @Column(name = "party_sizes", nullable = false, columnDefinition = "text[]")
     private List<String> partySizes = new ArrayList<>();
 
+    @Column(name = "suspended_at")
+    private Instant suspendedAt;
+
     @Version
     private Long version;
 

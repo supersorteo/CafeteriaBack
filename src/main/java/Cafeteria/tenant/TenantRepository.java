@@ -16,6 +16,8 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
 
     boolean existsBySlug(String slug);
 
+    boolean existsByIdAndSuspendedAtIsNull(UUID id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from Tenant t where t.id = :id")
     Optional<Tenant> lockById(@Param("id") UUID id);

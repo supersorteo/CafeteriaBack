@@ -11,18 +11,27 @@ import java.util.List;
 import javax.sql.DataSource;
 
 import org.flywaydb.core.Flyway;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import Cafeteria.support.IntegrationTestSupport;
 
 class SiteSpacesMigrationTest extends IntegrationTestSupport {
 
-    @Autowired
-    DataSource dataSource;
+    @Value("${spring.datasource.url}")
+    String url;
+    @Value("${spring.datasource.username}")
+    String user;
+    @Value("${spring.datasource.password}")
+    String password;
+
+    private DataSource dataSource() {
+        return new DriverManagerDataSource(url.replace("currentSchema=test_it", "currentSchema=v4_mig"), user, password);
+    }
 
     private Flyway flyway(String target) {
-        return Flyway.configure().dataSource(dataSource).schemas("v4_mig").defaultSchema("v4_mig")
+        return Flyway.configure().dataSource(dataSource()).schemas("v4_mig").defaultSchema("v4_mig")
                 .cleanDisabled(false).target(target == null ? "latest" : target).load();
     }
 
@@ -30,8 +39,7 @@ class SiteSpacesMigrationTest extends IntegrationTestSupport {
     void lasTarjetasYLasZonasAntiguasSeConviertenEnEspaciosSinPerderNada() throws Exception {
         flyway("3").clean();
         flyway("3").migrate();
-        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
-            c.setSchema("v4_mig");
+        try (Connection c = dataSource().getConnection(); Statement st = c.createStatement()) {
             st.execute("INSERT INTO tenants (id, slug, name, reservation_areas) VALUES "
                     + "('00000000-0000-0000-0000-00000000000a', 'negocio-a', 'A', "
                     + "ARRAY['terraza ', 'Barra', 'Salón', 'BARRA'])");
