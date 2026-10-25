@@ -35,3 +35,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Variables locales con claves: no se versionan (plantilla en .env.example)
+.env

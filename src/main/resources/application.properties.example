@@ -1,47 +1,77 @@
-# Copia este archivo como application.properties (que NO se sube a git) y ajusta tus valores locales.
-# Para producción se usa application-production.properties con variables de entorno (ver DEPLOY.md).
-
+# Plantilla: es una copia de application.properties (que ya no lleva claves).
 spring.application.name=cafeteria
 
+# Variables locales (claves y contraseñas): se leen del archivo .env de la raiz del backend.
+# El .env no se sube a GitHub; la plantilla es .env.example
+spring.config.import=optional:file:.env[.properties]
+
 # Base de datos - PostgreSQL local
-spring.datasource.url=jdbc:postgresql://localhost:5432/cafeteria
-spring.datasource.username=postgres
-spring.datasource.password=CAMBIA_ESTA_CLAVE
+spring.datasource.url=${DB_URL:jdbc:postgresql://localhost:5432/cafeteria}
+spring.datasource.username=${DB_USER:postgres}
+spring.datasource.password=${DB_PASSWORD}
+# (antes) spring.datasource.password=<ahora en .env: DB_PASSWORD>
 spring.datasource.driver-class-name=org.postgresql.Driver
 
 # JPA
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
 spring.jpa.hibernate.ddl-auto=validate
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
-spring.jpa.open-in-view=false
 
 # Flyway y sesiones (esquema gestionado por migraciones)
 spring.flyway.enabled=true
 spring.session.jdbc.initialize-schema=never
-spring.session.timeout=30m
 server.servlet.session.timeout=30m
 server.servlet.session.cookie.http-only=true
 server.servlet.session.cookie.same-site=lax
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
 
 # Servidor
 server.port=8080
 
-# Subida de imágenes
+# Multipart upload
 spring.servlet.multipart.max-file-size=5MB
 spring.servlet.multipart.max-request-size=6MB
 
-# Imágenes en local (en producción se usa Cloudinary)
+# JPA open-in-view
+spring.jpa.open-in-view=false
+
+# CORS
+cors.allowed-origins=http://localhost:4200
+
+# Imágenes en local
 media.storage=local
 app.upload.dir=uploads
-media.cleanup.enabled=true
 
-# Seed de desarrollo (nunca activar en producción)
+# Cloudinary (solo producción — no se usa en local)
+cloudinary.cloud-name=${CLOUDINARY_CLOUD_NAME:}
+cloudinary.api-key=${CLOUDINARY_API_KEY:}
+cloudinary.api-secret=${CLOUDINARY_API_SECRET:}
+# (antes) cloudinary.cloud-name / cloudinary.api-key / cloudinary.api-secret con los valores escritos aqui
+# <ahora en .env: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET>
+
+# Sesión y seed de desarrollo (nunca activar en producción)
+spring.session.timeout=30m
 seed.dev.enabled=true
 seed.dev.password=${SEED_DEV_PASSWORD:DevPass123!}
 
 # Registro y correo (desarrollo: el enlace se imprime en el log)
 registration.enabled=true
-mail.sender=log
-mail.from=no-reply@laterraza.local
+mail.sender=smtp
+mail.from=${MAIL_FROM}
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=${MAIL_USERNAME}
+spring.mail.password=${MAIL_PASSWORD}
+# (antes) spring.mail.username / spring.mail.password con los valores escritos aqui
+# <ahora en .env: MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM>
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.starttls.required=true
+spring.mail.properties.mail.smtp.connectiontimeout=10000
+spring.mail.properties.mail.smtp.timeout=15000
+spring.mail.properties.mail.smtp.writetimeout=15000
+management.health.mail.enabled=false
 app.public-base-url=http://localhost:4200
 outbox.worker.enabled=true
+
+media.cleanup.enabled=true

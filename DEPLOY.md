@@ -6,7 +6,7 @@ Guía completa: `docs/deployment.md` en el repositorio del frontend (`Cafeteria`
 - `Dockerfile`: compila con Maven y ejecuta con Java 21 como usuario sin privilegios (`SPRING_PROFILES_ACTIVE=production`).
 - `railway.json`: construye con el Dockerfile, healthcheck en `/actuator/health`, reinicio ante fallos.
 - `src/main/resources/application-production.properties`: perfil autosuficiente, todo por variables de entorno.
-- `src/main/resources/application.properties.example`: plantilla de la configuración **local** (`application.properties` no se versiona).
+- `.env` (local, no se sube a GitHub) guarda las claves y contraseñas; `.env.example` es la plantilla. `application.properties` las lee con `spring.config.import`.
 
 ## Variables en Railway
 
