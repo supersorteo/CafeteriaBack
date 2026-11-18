@@ -21,8 +21,8 @@ class RegistrationFlowTest extends IntegrationTestSupport {
     static final String NEW_PASSWORD = "Password-12345";
 
     private String registerJson(String email, String slug) {
-        return "{\"email\":\"%s\",\"password\":\"%s\",\"businessName\":\"Café %s\",\"slug\":\"%s\"}"
-                .formatted(email, NEW_PASSWORD, slug, slug);
+        return "{\"email\":\"%s\",\"password\":\"%s\",\"businessName\":\"Café %s\",\"slug\":\"%s\",\"activationCode\":\"%s\"}"
+                .formatted(email, NEW_PASSWORD, slug, slug, newCode(1));
     }
 
     private long count(String table) {
@@ -170,10 +170,10 @@ class RegistrationFlowTest extends IntegrationTestSupport {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("slug_reserved"));
         postJson("/api/v1/auth/register",
-                "{\"email\":\"a@cafe.test\",\"password\":\"corta\",\"businessName\":\"X\",\"slug\":\"cafe-ok\"}")
+                "{\"email\":\"a@cafe.test\",\"password\":\"corta\",\"businessName\":\"X\",\"slug\":\"cafe-ok\",\"activationCode\":\"" + newCode(1) + "\"}")
                 .andExpect(status().isBadRequest());
         postJson("/api/v1/auth/register",
-                "{\"email\":\"no-es-email\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-ok\"}")
+                "{\"email\":\"no-es-email\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-ok\",\"activationCode\":\"" + newCode(1) + "\"}")
                 .andExpect(status().isBadRequest());
 
         assertThat(count("users")).isZero();

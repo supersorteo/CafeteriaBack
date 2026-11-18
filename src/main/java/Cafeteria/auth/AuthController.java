@@ -21,7 +21,9 @@ public class AuthController {
 
     public record TenantSummary(UUID id, String slug, String name, boolean published, String logoUrl) {}
 
-    public record MeResponse(String email, Role role, TenantSummary tenant) {}
+    public record PlanSummary(java.time.Instant expiresAt, String status) {}
+
+    public record MeResponse(String email, Role role, TenantSummary tenant, PlanSummary plan) {}
 
     private final TenantContext tenantContext;
     private final UserRepository users;
@@ -48,6 +50,7 @@ public class AuthController {
         Tenant tenant = tenants.findById(current.tenantId()).orElseThrow();
         return new MeResponse(user.getEmail(), current.role(),
                 new TenantSummary(tenant.getId(), tenant.getSlug(), tenant.getName(), tenant.isPublished(),
-                        site.logoUrl(tenant.getId())));
+                        site.logoUrl(tenant.getId())),
+                new PlanSummary(tenant.getPlanExpiresAt(), Cafeteria.plan.PlanService.planOf(tenant).status().name()));
     }
 }

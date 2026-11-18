@@ -75,13 +75,16 @@ public class SuperAdminService {
         List<TenantRow> rows = jdbc.query("SELECT t.id, t.slug, t.name, t.published, t.suspended_at, u.email, "
                 + "u.email_verified_at IS NOT NULL AS verified, "
                 + "(SELECT count(*) FROM tenant_users e WHERE e.tenant_id = t.id AND e.role <> 'OWNER') AS editors, "
-                + "t.created_at" + LIST_FROM + where + " ORDER BY t.created_at DESC, t.id LIMIT ? OFFSET ?",
+                + "t.created_at, t.plan_expires_at" + LIST_FROM + where + " ORDER BY t.created_at DESC, t.id LIMIT ? OFFSET ?",
                 (rs, i) -> {
                     Timestamp suspended = rs.getTimestamp("suspended_at");
+                    Timestamp planExpires = rs.getTimestamp("plan_expires_at");
                     return new TenantRow(rs.getObject("id", UUID.class), rs.getString("slug"), rs.getString("name"),
                             rs.getBoolean("published"), suspended != null,
                             suspended == null ? null : suspended.toInstant(), rs.getString("email"),
-                            rs.getBoolean("verified"), rs.getLong("editors"), rs.getTimestamp("created_at").toInstant());
+                            rs.getBoolean("verified"), rs.getLong("editors"), rs.getTimestamp("created_at").toInstant(),
+                            planExpires == null ? null : planExpires.toInstant(),
+                            planExpires != null && !planExpires.toInstant().isAfter(java.time.Instant.now()) ? "EXPIRED" : "ACTIVE");
                 }, pageArgs.toArray());
         long totalElements = total == null ? 0 : total;
         return new TenantPage(rows, safePage, safeSize, totalElements, (int) Math.ceil(totalElements / (double) safeSize));
@@ -95,6 +98,7 @@ public class SuperAdminService {
         }
         tenant.setSuspendedAt(java.time.Instant.now());
         tenants.saveAndFlush(tenant);
+        jdbc.update("UPDATE activation_codes SET status = 'DISABLED' WHERE tenant_id = ? AND status = 'REDEEMED'", tenantId);
         memberEmails(tenantId).forEach(this::closeSessions);
         audit("TENANT_SUSPENDED", tenant, actor, ip, null);
     }
@@ -107,6 +111,7 @@ public class SuperAdminService {
         }
         tenant.setSuspendedAt(null);
         tenants.saveAndFlush(tenant);
+        jdbc.update("UPDATE activation_codes SET status = 'REDEEMED' WHERE tenant_id = ? AND status = 'DISABLED'", tenantId);
         audit("TENANT_ACTIVATED", tenant, actor, ip, null);
     }
 
@@ -119,6 +124,20 @@ public class SuperAdminService {
         if (confirmSlug == null || !tenant.getSlug().equals(confirmSlug.strip())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "slug_mismatch", "La dirección escrita no coincide");
         }
+        purge(tenant, actor, ip, null);
+    }
+
+    @Transactional
+    public void deleteWithBusiness(UUID tenantId, String confirmSlug, String actor, String ip, String origin) {
+        Tenant tenant = tenants.lockById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+        if (confirmSlug == null || !tenant.getSlug().equals(confirmSlug.strip())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "slug_mismatch", "La dirección escrita no coincide");
+        }
+        purge(tenant, actor, ip, origin);
+    }
+
+    private void purge(Tenant tenant, String actor, String ip, String origin) {
+        UUID tenantId = tenant.getId();
         List<String> emails = memberEmails(tenantId);
         List<UUID> userIds = jdbc.query("SELECT user_id FROM tenant_users WHERE tenant_id = ?",
                 (rs, i) -> rs.getObject(1, UUID.class), tenantId);
@@ -132,12 +151,14 @@ public class SuperAdminService {
             jdbc.update("DELETE FROM account_tokens WHERE user_id = ?", userId);
             jdbc.update("DELETE FROM users WHERE id = ?", userId);
         }
+        jdbc.update("DELETE FROM activation_codes WHERE tenant_id = ?", tenantId);
         jdbc.update("DELETE FROM tenants WHERE id = ?", tenantId);
         for (String email : emails) {
             jdbc.update("DELETE FROM email_outbox WHERE recipient = ?", email);
             closeSessions(email);
         }
-        audit("TENANT_DELETED", tenant, actor, ip, "usuarios=" + userIds.size() + ", imágenes=" + files);
+        audit("TENANT_DELETED", tenant, actor, ip,
+                (origin == null ? "" : origin + " · ") + "usuarios=" + userIds.size() + ", imágenes=" + files);
     }
 
     @Transactional(readOnly = true)

@@ -33,5 +33,6 @@ public final class PublicSiteDtos {
     public record PublicSite(String slug, String name, String descriptor, String tagline, String footerText,
             String currency, String locale, String timezone, Theme theme, Contact contact, Hero hero, About about,
             List<GalleryItem> gallery, List<String> marquee, List<Stat> stats, List<Highlight> highlights,
-            Reservation reservation, List<PublicCategory> categories, String logoUrl, List<Space> spaces) {}
+            Reservation reservation, List<PublicCategory> categories, String logoUrl, List<Space> spaces,
+            boolean reservationsEnabled) {}
 }

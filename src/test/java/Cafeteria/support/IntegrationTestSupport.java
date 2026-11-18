@@ -32,6 +32,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import Cafeteria.auth.User;
 import Cafeteria.auth.UserRepository;
 import Cafeteria.mail.OutboxProcessor;
+import Cafeteria.plan.PlanService;
 import Cafeteria.media.MediaAsset;
 import Cafeteria.media.MediaService;
 import Cafeteria.tenant.Role;
@@ -83,6 +84,8 @@ public abstract class IntegrationTestSupport {
     protected OutboxProcessor outboxProcessor;
     @Autowired
     protected MediaService mediaService;
+    @Autowired
+    protected PlanService plans;
     @Value("${app.upload.dir}")
     String uploadDir;
 
@@ -105,8 +108,12 @@ public abstract class IntegrationTestSupport {
         FileSystemUtils.deleteRecursively(uploadRoot());
         mail.reset();
         jdbc.execute("TRUNCATE site_images, menu_items, categories, media_assets, tenant_users, account_tokens, "
-                + "email_outbox, audit_log, tenants, users CASCADE");
+                + "email_outbox, audit_log, activation_codes, code_batches, tenants, users CASCADE");
         jdbc.execute("TRUNCATE spring_session CASCADE");
+    }
+
+    protected String newCode(int months) {
+        return plans.generateBatch("test", months, 1, null, "test").codes().get(0);
     }
 
     protected Tenant tenant(String slug) {

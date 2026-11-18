@@ -58,7 +58,7 @@ class ProductionProfileConfigTest {
         assertThat(get("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
         assertThat(get("spring.jpa.show-sql")).isEqualTo("false");
         assertThat(get("seed.dev.enabled")).isEqualTo("false");
-        assertThat(get("registration.enabled")).isEqualTo("${REGISTRATION_ENABLED:false}");
+        assertThat(get("registration.enabled")).isEqualTo("${REGISTRATION_ENABLED:true}");
         assertThat(get("server.servlet.session.cookie.secure")).isEqualTo("true");
         assertThat(get("server.servlet.session.cookie.http-only")).isEqualTo("true");
         assertThat(get("server.servlet.session.cookie.same-site")).isEqualTo("lax");

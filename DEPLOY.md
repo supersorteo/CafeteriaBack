@@ -18,7 +18,7 @@ Guía completa: `docs/deployment.md` en el repositorio del frontend (`Cafeteria`
 | `APP_PUBLIC_BASE_URL` | sí | `https://tu-app.vercel.app` |
 | `MAIL_FROM` `MAIL_USERNAME` `MAIL_PASSWORD` | sí (por defecto se envía por SMTP, plan Pro de Railway) | tu Gmail, tu Gmail y su contraseña de aplicación de 16 letras |
 | `GMAIL_CLIENT_ID` `GMAIL_CLIENT_SECRET` `GMAIL_REFRESH_TOKEN` | solo con `MAIL_SENDER=gmail-api` (planes de Railway sin SMTP) | ver `docs/deployment.md` |
-| `REGISTRATION_ENABLED` | no (por defecto `false`) | `true` |
+| `REGISTRATION_ENABLED` | no (por defecto `true`) | `false` cierra el registro del todo; el registro exige un código de activación |
 | `SUPERADMIN_EMAIL` `SUPERADMIN_PASSWORD` | no (sin ellas no existe el panel de superadmin) | tu Gmail de empresa; contraseña de 8+ caracteres |
 | `MAIL_SENDER` | no (por defecto `smtp`) | `smtp` (solo plan Pro de Railway) o `gmail-api` (cualquier plan) |
 | `DB_POOL_SIZE` | no | `10` |

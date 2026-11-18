@@ -22,9 +22,12 @@ public final class SuperAdminDtos {
     public record Stats(long total, long active, long suspended, long published, long newLast7Days) {}
 
     public record TenantRow(UUID id, String slug, String name, boolean published, boolean suspended, Instant suspendedAt,
-            String ownerEmail, boolean ownerVerified, long editors, Instant createdAt) {}
+            String ownerEmail, boolean ownerVerified, long editors, Instant createdAt, Instant planExpiresAt,
+            String planStatus) {}
 
     public record TenantPage(List<TenantRow> content, int page, int size, long totalElements, int totalPages) {}
+
+    public record OptionalDelete(@Size(max = 63) String confirmSlug) {}
 
     public record DeleteRequest(@NotBlank @Size(max = 63) String confirmSlug) {}
 

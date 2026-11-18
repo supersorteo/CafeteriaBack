@@ -51,7 +51,9 @@ cloudinary.api-secret=${CLOUDINARY_API_SECRET:}
 
 # Sesión y seed de desarrollo (nunca activar en producción)
 spring.session.timeout=30m
-seed.dev.enabled=true
+# Cuentas de demostracion con contrasena conocida (solo desarrollo). Apagado: el sitio demo /la-terraza se crea sin usuarios
+seed.dev.enabled=false
+demo.site.enabled=true
 seed.dev.password=${SEED_DEV_PASSWORD:DevPass123!}
 
 # Registro y correo (desarrollo: el enlace se imprime en el log)

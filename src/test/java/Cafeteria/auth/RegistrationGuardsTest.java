@@ -15,7 +15,7 @@ class RegistrationGuardsTest extends IntegrationTestSupport {
     @Test
     void conRegistroDeshabilitadoElBackendRechazaSinCrearDatos() throws Exception {
         postJson("/api/v1/auth/register",
-                "{\"email\":\"a@cafe.test\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-ok\"}")
+                "{\"email\":\"a@cafe.test\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-ok\",\"activationCode\":\"" + newCode(1) + "\"}")
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("registration_disabled"));
 

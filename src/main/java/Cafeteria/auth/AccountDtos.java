@@ -14,7 +14,8 @@ public final class AccountDtos {
             @NotBlank @Email @Size(max = 254) String email,
             @NotBlank @Size(min = 10, max = 72) String password,
             @NotBlank @Size(max = 120) String businessName,
-            @NotBlank @Size(min = 3, max = 63) @Pattern(regexp = SlugRules.PATTERN) String slug) {}
+            @NotBlank @Size(min = 3, max = 63) @Pattern(regexp = SlugRules.PATTERN) String slug,
+            @NotBlank @Size(max = 40) String activationCode) {}
 
     public record EmailRequest(@NotBlank @Email @Size(max = 254) String email) {}
 

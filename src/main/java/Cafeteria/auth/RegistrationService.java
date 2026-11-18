@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import Cafeteria.auth.AccountDtos.RegisterRequest;
+import Cafeteria.plan.PlanService;
 import Cafeteria.shared.ApiException;
 import Cafeteria.tenant.Role;
 import Cafeteria.tenant.SlugRules;
@@ -25,21 +26,27 @@ public class RegistrationService {
     private final AccountService accounts;
     private final PasswordEncoder encoder;
     private final TransactionTemplate tx;
+    private final PlanService plans;
 
     public RegistrationService(UserRepository users, TenantRepository tenants, TenantUserRepository memberships,
-            AccountService accounts, PasswordEncoder encoder, TransactionTemplate tx) {
+            AccountService accounts, PasswordEncoder encoder, TransactionTemplate tx, PlanService plans) {
         this.users = users;
         this.tenants = tenants;
         this.memberships = memberships;
         this.accounts = accounts;
         this.encoder = encoder;
         this.tx = tx;
+        this.plans = plans;
     }
 
     public void register(RegisterRequest request) {
         String email = AccountService.normalize(request.email());
         if (SlugRules.RESERVED.contains(request.slug())) {
             throw ApiException.badRequest("slug_reserved", "Ese identificador no está disponible");
+        }
+        if (!plans.isAvailable(request.activationCode())) {
+            throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "invalid_code",
+                    "El código no es válido o ya fue usado");
         }
         Optional<User> existing = users.findByEmail(email);
         if (existing.isPresent()) {
@@ -72,6 +79,8 @@ public class RegistrationService {
     private void create(String email, String passwordHash, RegisterRequest request) {
         User user = users.saveAndFlush(new User(email, passwordHash));
         Tenant tenant = new Tenant(request.slug(), request.businessName().strip());
+        tenants.saveAndFlush(tenant);
+        tenant.setPlanExpiresAt(plans.redeemForRegistration(request.activationCode(), tenant.getId(), email));
         tenants.saveAndFlush(tenant);
         memberships.saveAndFlush(new TenantUser(user.getId(), tenant.getId(), Role.OWNER));
         accounts.issueVerification(user);

@@ -14,11 +14,11 @@ class RegisterRateLimitTest extends IntegrationTestSupport {
     void registroYRecuperacionSeLimitanPorIp() throws Exception {
         for (int i = 0; i < 2; i++) {
             postJson("/api/v1/auth/register",
-                    "{\"email\":\"a%d@cafe.test\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-%d\"}"
-                            .formatted(i, i)).andExpect(status().isAccepted());
+                    "{\"email\":\"a%d@cafe.test\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-%d\",\"activationCode\":\"%s\"}"
+                            .formatted(i, i, newCode(1))).andExpect(status().isAccepted());
         }
         postJson("/api/v1/auth/register",
-                "{\"email\":\"a9@cafe.test\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-9\"}")
+                "{\"email\":\"a9@cafe.test\",\"password\":\"Password-12345\",\"businessName\":\"X\",\"slug\":\"cafe-9\",\"activationCode\":\"" + newCode(1) + "\"}")
                 .andExpect(status().isTooManyRequests());
 
         for (int i = 0; i < 2; i++) {

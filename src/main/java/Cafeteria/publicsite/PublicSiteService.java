@@ -124,6 +124,7 @@ public class PublicSiteService {
                 spaces.stream().map(sp -> new Highlight(sp.name(), sp.description())).toList(),
                 new Reservation(spaces.stream().filter(Space::bookable).map(Space::name).toList(),
                         List.copyOf(tenant.getPartySizes())),
-                publicCategories, logoUrl, spaces);
+                publicCategories, logoUrl, spaces,
+                Cafeteria.plan.PlanService.planOf(tenant).status() == Cafeteria.plan.PlanService.Status.ACTIVE);
     }
 }

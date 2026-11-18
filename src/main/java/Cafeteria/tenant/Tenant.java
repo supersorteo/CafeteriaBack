@@ -97,6 +97,9 @@ public class Tenant {
     @Column(name = "suspended_at")
     private Instant suspendedAt;
 
+    @Column(name = "plan_expires_at")
+    private Instant planExpiresAt;
+
     @Version
     private Long version;
 
