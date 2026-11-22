@@ -23,7 +23,10 @@ public class AuthController {
 
     public record PlanSummary(java.time.Instant expiresAt, String status, Integer months, boolean qrCustomization) {}
 
-    public record MeResponse(String email, Role role, TenantSummary tenant, PlanSummary plan) {}
+    public record QrSummary(String dotType, String cornerType, String dotColor, String backgroundMode,
+            String backgroundColor, boolean useLogo) {}
+
+    public record MeResponse(String email, Role role, TenantSummary tenant, PlanSummary plan, QrSummary qr) {}
 
     private final TenantContext tenantContext;
     private final UserRepository users;
@@ -51,7 +54,12 @@ public class AuthController {
         return new MeResponse(user.getEmail(), current.role(),
                 new TenantSummary(tenant.getId(), tenant.getSlug(), tenant.getName(), tenant.isPublished(),
                         site.logoUrl(tenant.getId())),
-                planSummary(tenant));
+                planSummary(tenant), qrSummary(tenant));
+    }
+
+    private static QrSummary qrSummary(Tenant t) {
+        return new QrSummary(t.getQrDotType(), t.getQrCornerType(), t.getQrDotColor(), t.getQrBackgroundMode(),
+                t.getQrBackgroundColor(), t.isQrUseLogo());
     }
 
     private static PlanSummary planSummary(Tenant tenant) {

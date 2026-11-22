@@ -129,6 +129,10 @@ class SiteBrandingTest extends IntegrationTestSupport {
         mvc.perform(get("/api/v1/admin/qr").cookie(editor))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.backgroundMode").value("gradient"));
+        mvc.perform(get("/api/v1/auth/me").cookie(editor))
+                .andExpect(jsonPath("$.qr.dotType").value("rounded"))
+                .andExpect(jsonPath("$.qr.backgroundMode").value("gradient"))
+                .andExpect(jsonPath("$.qr.useLogo").value(true));
     }
 
     @Test
