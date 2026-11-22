@@ -22,7 +22,11 @@ public class PlanService {
 
     public record Batch(UUID id, String label, int durationMonths, List<String> codes) {}
 
-    public record Plan(Instant expiresAt, Status status) {}
+    public static final int QR_CUSTOMIZATION_MIN_MONTHS = 3;
+
+    public record Plan(Instant expiresAt, Status status, Integer months, boolean qrCustomization) {}
+
+    public record Redemption(Instant expiresAt, int months) {}
 
     private final JdbcTemplate jdbc;
     private final TenantRepository tenants;
@@ -35,7 +39,9 @@ public class PlanService {
     public static Plan planOf(Tenant tenant) {
         Instant expires = tenant.getPlanExpiresAt();
         boolean expired = expires != null && !expires.isAfter(Instant.now());
-        return new Plan(expires, expired ? Status.EXPIRED : Status.ACTIVE);
+        Integer months = tenant.getPlanMonths();
+        return new Plan(expires, expired ? Status.EXPIRED : Status.ACTIVE, months,
+                months == null || months >= QR_CUSTOMIZATION_MIN_MONTHS);
     }
 
     public static Instant plusMonths(Instant from, int months) {
@@ -84,7 +90,7 @@ public class PlanService {
     }
 
     @Transactional
-    public Instant redeemForRegistration(String rawCode, UUID tenantId, String email) {
+    public Redemption redeemForRegistration(String rawCode, UUID tenantId, String email) {
         String code = ActivationCodeFormat.normalize(rawCode);
         List<Integer> months = code.isEmpty() ? List.of() : jdbc.query(
                 "UPDATE activation_codes SET status = 'REDEEMED', redeemed_at = now(), redeemed_by_email = ?, tenant_id = ? "
@@ -93,7 +99,7 @@ public class PlanService {
         if (months.isEmpty()) {
             throw invalidCode();
         }
-        return plusMonths(Instant.now(), months.get(0));
+        return new Redemption(plusMonths(Instant.now(), months.get(0)), months.get(0));
     }
 
     @Transactional
@@ -113,6 +119,7 @@ public class PlanService {
         Instant current = tenant.getPlanExpiresAt();
         Instant base = current != null && current.isAfter(now) ? current : now;
         tenant.setPlanExpiresAt(plusMonths(base, months.get(0)));
+        tenant.setPlanMonths(months.get(0));
         tenants.saveAndFlush(tenant);
         audit("PLAN_RENEWED", tenant, email, code + " (" + months.get(0) + " meses)");
         return planOf(tenant);

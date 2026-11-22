@@ -100,6 +100,14 @@ public class SiteService {
         tenant.setHeroCaption(blankToNull(request.heroCaption()));
         tenant.setMarqueeItems(strip(request.marqueeItems()));
         tenant.setPartySizes(strip(request.partySizes()));
+        tenant.setBusinessTitleColor(hexOrNull(request.businessTitleColor()));
+        tenant.setBackgroundColor(hexOrNull(request.backgroundColor()));
+        tenant.setFooterColor(hexOrNull(request.footerColor()));
+        tenant.setHeadingColor(hexOrNull(request.headingColor()));
+        tenant.setParagraphColor(hexOrNull(request.paragraphColor()));
+        tenant.setWhatsappColor(hexOrNull(request.whatsappColor()));
+        tenant.setMarqueeColor(hexOrNull(request.marqueeColor()));
+        tenant.setFontFamily(blankToNull(request.fontFamily()));
         Tenant saved = tenants.saveAndFlush(tenant);
         replaceStats(tenantId, request.stats());
         replaceSpaces(tenantId, request.spaces());
@@ -240,7 +248,9 @@ public class SiteService {
                 List.copyOf(t.getPartySizes()),
                 siteStats.findByTenantIdOrderByPositionAsc(t.getId()).stream()
                         .map(s -> new SiteDtos.StatRef(s.getLabel(), s.getValue())).toList(),
-                spaces.stream().map(sp -> new SiteDtos.HighlightRef(sp.name(), sp.description())).toList(), spaces);
+                spaces.stream().map(sp -> new SiteDtos.HighlightRef(sp.name(), sp.description())).toList(), spaces,
+                t.getBusinessTitleColor(), t.getBackgroundColor(), t.getFooterColor(), t.getHeadingColor(),
+                t.getParagraphColor(), t.getWhatsappColor(), t.getMarqueeColor(), t.getFontFamily());
     }
 
     @Transactional(readOnly = true)
@@ -286,6 +296,11 @@ public class SiteService {
 
     private Tenant find(UUID tenantId) {
         return tenants.findById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+    }
+
+    private static String hexOrNull(String value) {
+        String clean = blankToNull(value);
+        return clean == null ? null : clean.toUpperCase();
     }
 
     private static String blankToNull(String value) {

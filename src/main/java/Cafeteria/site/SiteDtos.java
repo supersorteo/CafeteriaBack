@@ -50,7 +50,15 @@ public final class SiteDtos {
             @Size(max = 8) List<@NotBlank @Size(max = 80) String> marqueeItems,
             @Size(max = 10) List<@NotBlank @Size(max = 20) String> partySizes,
             @Size(max = 3) List<@Valid StatRequest> stats,
-            @Size(max = 10) List<@Valid SpaceRequest> spaces) {}
+            @Size(max = 10) List<@Valid SpaceRequest> spaces,
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String businessTitleColor,
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String backgroundColor,
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String footerColor,
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String headingColor,
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String paragraphColor,
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String whatsappColor,
+            @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String marqueeColor,
+            @Pattern(regexp = "fraunces|inter|georgia|garamond|trebuchet|arial|verdana|courier") String fontFamily) {}
 
     public record ImageRef(UUID id, String url) {}
 
@@ -69,7 +77,9 @@ public final class SiteDtos {
             String primaryColor, String accentColor, String heroTitle, String heroDescription, String aboutText,
             long version, SiteImagesResponse images, String descriptor, String tagline, String aboutTitle,
             String footerText, String heroCaption, List<String> marqueeItems, List<String> reservationAreas,
-            List<String> partySizes, List<StatRef> stats, List<HighlightRef> highlights, List<SpaceRef> spaces) {}
+            List<String> partySizes, List<StatRef> stats, List<HighlightRef> highlights, List<SpaceRef> spaces,
+            String businessTitleColor, String backgroundColor, String footerColor, String headingColor,
+            String paragraphColor, String whatsappColor, String marqueeColor, String fontFamily) {}
 
     public record GalleryImageRequest(@NotNull UUID mediaId, @Size(max = 200) String alt) {}
 

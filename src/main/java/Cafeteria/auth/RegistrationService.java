@@ -80,7 +80,9 @@ public class RegistrationService {
         User user = users.saveAndFlush(new User(email, passwordHash));
         Tenant tenant = new Tenant(request.slug(), request.businessName().strip());
         tenants.saveAndFlush(tenant);
-        tenant.setPlanExpiresAt(plans.redeemForRegistration(request.activationCode(), tenant.getId(), email));
+        Cafeteria.plan.PlanService.Redemption redemption = plans.redeemForRegistration(request.activationCode(), tenant.getId(), email);
+        tenant.setPlanExpiresAt(redemption.expiresAt());
+        tenant.setPlanMonths(redemption.months());
         tenants.saveAndFlush(tenant);
         memberships.saveAndFlush(new TenantUser(user.getId(), tenant.getId(), Role.OWNER));
         accounts.issueVerification(user);

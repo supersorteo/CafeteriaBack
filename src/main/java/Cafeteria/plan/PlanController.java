@@ -24,7 +24,11 @@ public class PlanController {
 
     public record RedeemRequest(@NotBlank @Size(max = 40) String code) {}
 
-    public record PlanResponse(Instant expiresAt, String status) {}
+    public record PlanResponse(Instant expiresAt, String status, Integer months, boolean qrCustomization) {}
+
+    private static PlanResponse respond(PlanService.Plan plan) {
+        return new PlanResponse(plan.expiresAt(), plan.status().name(), plan.months(), plan.qrCustomization());
+    }
 
     private final TenantContext tenantContext;
     private final PlanService plans;
@@ -42,7 +46,7 @@ public class PlanController {
     public PlanResponse current() {
         UUID tenantId = tenantContext.require().tenantId();
         PlanService.Plan plan = PlanService.planOf(tenants.findById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado")));
-        return new PlanResponse(plan.expiresAt(), plan.status().name());
+        return respond(plan);
     }
 
     @PostMapping("/redeem")
@@ -50,6 +54,6 @@ public class PlanController {
         TenantContext.Current current = tenantContext.requireOwner();
         User user = users.findById(current.userId()).orElseThrow();
         PlanService.Plan plan = plans.renew(current.tenantId(), request.code(), user.getEmail());
-        return new PlanResponse(plan.expiresAt(), plan.status().name());
+        return respond(plan);
     }
 }

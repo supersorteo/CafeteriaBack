@@ -10,7 +10,9 @@ public final class PublicSiteDtos {
 
     public record Contact(String whatsappNumber, String phone, String email, String address, String schedule) {}
 
-    public record Theme(String primaryColor, String accentColor) {}
+    public record Theme(String primaryColor, String accentColor, String businessTitleColor, String backgroundColor,
+            String footerColor, String headingColor, String paragraphColor, String whatsappColor, String marqueeColor,
+            String fontFamily) {}
 
     public record Hero(String title, String description, String caption, String imageUrl) {}
 

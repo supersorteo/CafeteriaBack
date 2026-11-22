@@ -21,7 +21,7 @@ public class AuthController {
 
     public record TenantSummary(UUID id, String slug, String name, boolean published, String logoUrl) {}
 
-    public record PlanSummary(java.time.Instant expiresAt, String status) {}
+    public record PlanSummary(java.time.Instant expiresAt, String status, Integer months, boolean qrCustomization) {}
 
     public record MeResponse(String email, Role role, TenantSummary tenant, PlanSummary plan) {}
 
@@ -51,6 +51,11 @@ public class AuthController {
         return new MeResponse(user.getEmail(), current.role(),
                 new TenantSummary(tenant.getId(), tenant.getSlug(), tenant.getName(), tenant.isPublished(),
                         site.logoUrl(tenant.getId())),
-                new PlanSummary(tenant.getPlanExpiresAt(), Cafeteria.plan.PlanService.planOf(tenant).status().name()));
+                planSummary(tenant));
+    }
+
+    private static PlanSummary planSummary(Tenant tenant) {
+        Cafeteria.plan.PlanService.Plan plan = Cafeteria.plan.PlanService.planOf(tenant);
+        return new PlanSummary(plan.expiresAt(), plan.status().name(), plan.months(), plan.qrCustomization());
     }
 }

@@ -113,7 +113,10 @@ public class PublicSiteService {
 
         return new PublicSite(tenant.getSlug(), tenant.getName(), tenant.getDescriptor(), tenant.getTagline(),
                 tenant.getFooterText(), tenant.getCurrency(), tenant.getLocale(), tenant.getTimezone(),
-                new Theme(tenant.getPrimaryColor(), tenant.getAccentColor()),
+                new Theme(tenant.getPrimaryColor(), tenant.getAccentColor(), tenant.getBusinessTitleColor(),
+                        tenant.getBackgroundColor(), tenant.getFooterColor(), tenant.getHeadingColor(),
+                        tenant.getParagraphColor(), tenant.getWhatsappColor(), tenant.getMarqueeColor(),
+                        tenant.getFontFamily()),
                 new Contact(tenant.getWhatsappNumber(), tenant.getPhone(), tenant.getEmail(), tenant.getAddress(),
                         tenant.getSchedule()),
                 new Hero(tenant.getHeroTitle(), tenant.getHeroDescription(), tenant.getHeroCaption(), heroUrl),

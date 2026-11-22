@@ -117,6 +117,7 @@ class ActivationCodesTest extends IntegrationTestSupport {
         assertThat(jdbc.queryForObject("SELECT status FROM activation_codes WHERE code = ?", String.class, code)).isEqualTo("REDEEMED");
         assertThat(jdbc.queryForObject("SELECT redeemed_by_email FROM activation_codes WHERE code = ?", String.class, code))
                 .isEqualTo("nuevo@cafe.test");
+        assertThat(tenants.findBySlug("cafe-nuevo").orElseThrow().getPlanMonths()).isEqualTo(3);
 
         postJson("/api/v1/auth/register", registerJson("otro@cafe.test", "cafe-otro", code))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("invalid_code"));
@@ -218,7 +219,10 @@ class ActivationCodesTest extends IntegrationTestSupport {
 
         mvc.perform(withXsrf(post("/api/v1/admin/plan/redeem").cookie(owner), newXsrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"code\":\"%s\"}".formatted(nuevo.toLowerCase())))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.months").value(6)).andExpect(jsonPath("$.qrCustomization").value(true));
+        mvc.perform(get("/api/v1/auth/me").cookie(owner))
+                .andExpect(jsonPath("$.plan.months").value(6)).andExpect(jsonPath("$.plan.qrCustomization").value(true));
 
         assertThat(tenants.findById(tenant.getId()).orElseThrow().getPlanExpiresAt())
                 .isBetween(Instant.now().plus(178, ChronoUnit.DAYS), Instant.now().plus(186, ChronoUnit.DAYS));
