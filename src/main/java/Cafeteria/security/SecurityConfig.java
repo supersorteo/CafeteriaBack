@@ -27,7 +27,8 @@ public class SecurityConfig {
     static final String API = "/api/v1";
     static final String LOGIN_PATH = API + "/auth/login";
     static final String[] PUBLIC_POSTS = { API + "/auth/register", API + "/auth/verify-email",
-            API + "/auth/resend-verification", API + "/auth/forgot-password", API + "/auth/reset-password" };
+            API + "/auth/resend-verification", API + "/auth/forgot-password", API + "/auth/reset-password",
+            API + "/public/billing/orders" };
 
     private static int globalCeiling(int perClient, int factor) {
         return (int) Math.min(Integer.MAX_VALUE, (long) perClient * Math.max(1, factor));

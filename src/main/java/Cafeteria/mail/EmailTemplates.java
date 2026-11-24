@@ -9,6 +9,7 @@ public class EmailTemplates {
     public static final String VERIFY_EMAIL = "VERIFY_EMAIL";
     public static final String RESET_PASSWORD = "RESET_PASSWORD";
     public static final String ACCOUNT_EXISTS = "ACCOUNT_EXISTS";
+    public static final String ACTIVATION_CODE = "ACTIVATION_CODE";
 
     private final String baseUrl;
 
@@ -30,6 +31,11 @@ public class EmailTemplates {
                     "Alguien intentó registrar este correo, pero ya tiene una cuenta.\n\n"
                             + "Si fuiste tú, inicia sesión o recupera tu contraseña en " + baseUrl + "/auth/forgot-password"
                             + "\n\nSi no fuiste tú, ignora este mensaje.");
+            case ACTIVATION_CODE -> new EmailMessage(recipient, "Tu código de activación",
+                    "Recibimos tu pago. Tu código de activación es:\n\n" + payload
+                            + "\n\nCrea tu negocio aquí (el código ya viene escrito):\n"
+                            + baseUrl + "/auth/register?code=" + payload
+                            + "\n\nEl plazo de tu plan empieza cuando lo uses. Si no esperabas este mensaje, ignóralo.");
             default -> throw new IllegalArgumentException("Tipo de correo desconocido: " + type);
         };
     }

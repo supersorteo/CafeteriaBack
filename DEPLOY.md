@@ -22,6 +22,7 @@ Guía completa: `docs/deployment.md` en el repositorio del frontend (`Cafeteria`
 | `SUPERADMIN_EMAIL` `SUPERADMIN_PASSWORD` | no (sin ellas no existe el panel de superadmin) | tu Gmail de empresa; contraseña de 8+ caracteres |
 | `MAIL_SENDER` | no (por defecto `smtp`) | `smtp` (solo plan Pro de Railway) o `gmail-api` (cualquier plan) |
 | `DB_POOL_SIZE` | no | `10` |
+| `BILLING_WHATSAPP_AR` `BILLING_WHATSAPP_UY` | sí para vender | Número de WhatsApp que atiende los pedidos de cada país, solo dígitos con código de país (sin `+`). Argentina lo atiende quien tenga la región `AR`; Uruguay, el dueño. **No se versionan.** Sin número, ese país no permite comprar. |
 | `DEMO_SITE_ENABLED` | no (por defecto `true`) | `false` para no crear el sitio demo `/la-terraza` |
 
 ## Comprobar en local el perfil de producción

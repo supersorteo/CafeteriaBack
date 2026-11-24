@@ -54,6 +54,28 @@ public class SuperAdminScopes {
                 : " AND (" + column + " IS NULL OR lower(" + column + ") NOT IN " + OTHER_ADMINS + ")";
     }
 
+    private static final String REGION_OF_ACCOUNT = "EXISTS (SELECT 1 FROM superadmin_accounts a WHERE a.enabled "
+            + "AND ',' || a.regions || ',' LIKE '%%,' || %s || ',%%' AND lower(a.email) %s ?)";
+
+    public String regionFilter(Viewer viewer, String column, List<Object> args) {
+        args.add(viewer.email());
+        if (!viewer.owner()) {
+            return " AND " + REGION_OF_ACCOUNT.formatted(column, "=");
+        }
+        String others = REGION_OF_ACCOUNT.formatted(column, "<>");
+        return viewer.others() ? " AND " + others : " AND NOT " + others;
+    }
+
+    public boolean canSeeRegion(Viewer viewer, String region) {
+        if (viewer.owner()) {
+            return true;
+        }
+        Boolean mine = jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM superadmin_accounts a WHERE a.enabled "
+                + "AND ',' || a.regions || ',' LIKE '%,' || ? || ',%' AND lower(a.email) = ?)",
+                Boolean.class, region, viewer.email());
+        return Boolean.TRUE.equals(mine);
+    }
+
     public void requireTenant(Viewer viewer, UUID tenantId) {
         if (viewer.owner()) {
             return;

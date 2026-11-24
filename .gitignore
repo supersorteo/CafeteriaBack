@@ -38,3 +38,6 @@ build/
 
 # Variables locales con claves: no se versionan (plantilla en .env.example)
 .env
+
+# Variables para desplegar en Railway (contienen secretos)
+.env.railway
