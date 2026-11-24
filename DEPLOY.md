@@ -45,9 +45,11 @@ La cuenta principal sigue definiéndose con `SUPERADMIN_EMAIL` y `SUPERADMIN_PAS
 |---|---|
 | `SUPERADMIN_OPERATOR_EMAIL` | Correo de la persona. Recibe su propio código de 6 dígitos al iniciar sesión. |
 | `SUPERADMIN_OPERATOR_PASSWORD` | Contraseña **temporal** (mínimo 8 caracteres). Debe cambiarla en el primer ingreso. |
-| `SUPERADMIN_OPERATOR_ROLE` | `OPERATOR` (por defecto, solo lectura de negocios y actividad) o `ADMIN` (todos los permisos). |
+| `SUPERADMIN_OPERATOR_ROLE` | `ADMIN` (todos los permisos sobre lo suyo) u `OPERATOR` (por defecto, solo lectura de negocios y actividad). Para un socio de plena confianza usa `ADMIN`. |
 | `SUPERADMIN_OPERATOR_REGIONS` | Regiones de cobro que atiende, por ejemplo `AR`. |
 | `SUPERADMIN_OPERATOR_ENABLED` | `false` **deshabilita la cuenta** (mantén el correo definido). Sus sesiones abiertas se cierran en la siguiente petición. |
+
+**Quién ve qué.** La cuenta de `SUPERADMIN_EMAIL` es la del **Dueño** y ve todo. Cualquier otra cuenta `ADMIN` ve y gestiona **solo** los códigos que generó, los negocios que se registraron con esos códigos y su propia actividad; no ve lo del Dueño. El Dueño ve lo del otro administrador en una vista separada («Otro administrador»), sin mezclarlo con lo suyo. El filtro lo aplica el servidor, no solo la pantalla.
 
 **Revocar el acceso:** pon `SUPERADMIN_OPERATOR_ENABLED=false` con el correo definido, o cambia el rol. Si quitas todas las variables, la cuenta **queda como estaba** (así se puede retirar la contraseña temporal del entorno tras el primer ingreso); para revocarla en ese caso, usa la variable `ENABLED=false` o desactívala en la base de datos (`superadmin_accounts.enabled`).
 

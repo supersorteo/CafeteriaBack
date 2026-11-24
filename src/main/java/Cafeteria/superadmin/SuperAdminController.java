@@ -29,35 +29,39 @@ import jakarta.validation.Valid;
 public class SuperAdminController {
 
     private final SuperAdminService service;
+    private final SuperAdminScopes scopes;
     private final boolean trustForwardedFor;
 
-    public SuperAdminController(SuperAdminService service,
+    public SuperAdminController(SuperAdminService service, SuperAdminScopes scopes,
             @Value("${security.trust-forwarded-for:false}") boolean trustForwardedFor) {
         this.service = service;
+        this.scopes = scopes;
         this.trustForwardedFor = trustForwardedFor;
     }
 
     @GetMapping("/stats")
-    public Stats stats() {
-        return service.stats();
+    public Stats stats(@RequestParam(required = false) String scope, Authentication auth) {
+        return service.stats(scopes.viewer(auth, scope));
     }
 
     @GetMapping("/tenants")
-    public TenantPage tenants(@RequestParam(required = false) String query,
+    public TenantPage tenants(@RequestParam(required = false) String query, @RequestParam(required = false) String scope,
             @RequestParam(defaultValue = "all") String status, @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return service.list(query, status, page, size);
+            @RequestParam(defaultValue = "20") int size, Authentication auth) {
+        return service.list(scopes.viewer(auth, scope), query, status, page, size);
     }
 
     @PostMapping("/tenants/{id}/suspend")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void suspend(@PathVariable UUID id, Authentication auth, HttpServletRequest request) {
+        scopes.requireTenant(scopes.viewer(auth, null), id);
         service.suspend(id, auth.getName(), ClientIp.resolve(request, trustForwardedFor));
     }
 
     @PostMapping("/tenants/{id}/activate")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void activate(@PathVariable UUID id, Authentication auth, HttpServletRequest request) {
+        scopes.requireTenant(scopes.viewer(auth, null), id);
         service.activate(id, auth.getName(), ClientIp.resolve(request, trustForwardedFor));
     }
 
@@ -65,11 +69,13 @@ public class SuperAdminController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID id, @Valid @RequestBody DeleteRequest body, Authentication auth,
             HttpServletRequest request) {
+        scopes.requireTenant(scopes.viewer(auth, null), id);
         service.delete(id, body.confirmSlug(), auth.getName(), ClientIp.resolve(request, trustForwardedFor));
     }
 
     @GetMapping("/audit")
-    public List<AuditEntry> audit(@RequestParam(defaultValue = "50") int limit) {
-        return service.audit(limit);
+    public List<AuditEntry> audit(@RequestParam(defaultValue = "50") int limit, @RequestParam(required = false) String scope,
+            Authentication auth) {
+        return service.audit(scopes.viewer(auth, scope), limit);
     }
 }

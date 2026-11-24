@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -36,6 +38,8 @@ class SuperAdminAccountsTest extends IntegrationTestSupport {
     SuperAdminAuthService auth;
     @Autowired
     SuperAdminAccounts accounts;
+    @Autowired
+    Cafeteria.plan.PlanService planService;
 
     @BeforeEach
     void reset() {
@@ -237,6 +241,74 @@ class SuperAdminAccountsTest extends IntegrationTestSupport {
         mvc.perform(get("/api/v1/superadmin/stats").cookie(second)).andExpect(status().isOk());
         jdbc.update("UPDATE superadmin_accounts SET enabled = FALSE");
         mvc.perform(get("/api/v1/superadmin/stats").cookie(second)).andExpect(status().isUnauthorized());
+    }
+
+    private Tenant redeemedBy(String slug, String author) {
+        Tenant tenant = tenant(slug);
+        String code = planService.generateBatch("lote " + slug, 1, 1, null, author).codes().get(0);
+        jdbc.update("UPDATE activation_codes SET status = 'REDEEMED', tenant_id = ?, redeemed_at = now() WHERE code = ?",
+                tenant.getId(), code);
+        return tenant;
+    }
+
+    @Test
+    void cadaAdministradorVeSoloLoSuyoYElDuenoVeTodoEnPestanasSeparadas() throws Exception {
+        account(SuperAdminAccounts.ADMIN, false);
+        Tenant mine = redeemedBy("del-dueno", MAIN);
+        Tenant theirs = redeemedBy("de-danilo", OTHER);
+        Cookie owner = signIn(MAIN, MAIN_PASSWORD);
+        Cookie danilo = signIn(OTHER, TEMP_PASSWORD);
+
+        mvc.perform(get("/api/v1/superadmin/auth/me").cookie(owner)).andExpect(jsonPath("$.owner", is(true)));
+        mvc.perform(get("/api/v1/superadmin/auth/me").cookie(danilo)).andExpect(jsonPath("$.owner", is(false)));
+
+        mvc.perform(get("/api/v1/superadmin/tenants").cookie(owner))
+                .andExpect(jsonPath("$.content", hasSize(1))).andExpect(jsonPath("$.content[0].slug", is("del-dueno")));
+        mvc.perform(get("/api/v1/superadmin/tenants").param("scope", "others").cookie(owner))
+                .andExpect(jsonPath("$.content", hasSize(1))).andExpect(jsonPath("$.content[0].slug", is("de-danilo")));
+        mvc.perform(get("/api/v1/superadmin/tenants").cookie(danilo))
+                .andExpect(jsonPath("$.content", hasSize(1))).andExpect(jsonPath("$.content[0].slug", is("de-danilo")));
+        mvc.perform(get("/api/v1/superadmin/tenants").param("scope", "others").cookie(danilo))
+                .andExpect(jsonPath("$.content[0].slug", is("de-danilo")));
+
+        mvc.perform(get("/api/v1/superadmin/codes/batches").cookie(danilo))
+                .andExpect(jsonPath("$", hasSize(1))).andExpect(jsonPath("$[0].createdBy", is(OTHER)));
+        mvc.perform(get("/api/v1/superadmin/codes/batches").cookie(owner))
+                .andExpect(jsonPath("$", hasSize(1))).andExpect(jsonPath("$[0].createdBy", is(MAIN)));
+        mvc.perform(get("/api/v1/superadmin/codes/batches").param("scope", "others").cookie(owner))
+                .andExpect(jsonPath("$", hasSize(1))).andExpect(jsonPath("$[0].createdBy", is(OTHER)));
+        mvc.perform(get("/api/v1/superadmin/codes").cookie(danilo)).andExpect(jsonPath("$.totalElements", is(1)));
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(danilo)).andExpect(jsonPath("$.total", is(1)));
+
+        mvc.perform(withXsrf(post("/api/v1/superadmin/tenants/" + mine.getId() + "/suspend").cookie(danilo), newXsrf()))
+                .andExpect(status().isNotFound());
+        mvc.perform(withXsrf(post("/api/v1/superadmin/tenants/" + theirs.getId() + "/suspend").cookie(danilo), newXsrf()))
+                .andExpect(status().isNoContent());
+        mvc.perform(withXsrf(post("/api/v1/superadmin/tenants/" + theirs.getId() + "/activate").cookie(owner), newXsrf()))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/v1/superadmin/audit").cookie(danilo))
+                .andExpect(jsonPath("$[*].actor", org.hamcrest.Matchers.everyItem(is(OTHER))));
+        mvc.perform(get("/api/v1/superadmin/audit").param("scope", "others").cookie(owner))
+                .andExpect(jsonPath("$[*].actor", org.hamcrest.Matchers.everyItem(is(OTHER))));
+        mvc.perform(get("/api/v1/superadmin/audit").cookie(owner))
+                .andExpect(jsonPath("$[*].actor", org.hamcrest.Matchers.everyItem(is(MAIN))));
+    }
+
+    @Test
+    void unAdministradorAdicionalGeneraCodigosYSusCodigosQuedanComoSuyos() throws Exception {
+        account(SuperAdminAccounts.ADMIN, false);
+        Cookie danilo = signIn(OTHER, TEMP_PASSWORD);
+        Cookie owner = signIn(MAIN, MAIN_PASSWORD);
+        String planFree = "{\"label\":\"d\",\"durationMonths\":1,\"quantity\":2,\"note\":\"\",\"planCode\":\"EMPRENDEDOR\"}";
+
+        mvc.perform(withXsrf(post("/api/v1/superadmin/codes/batches").cookie(danilo), newXsrf())
+                .contentType(MediaType.APPLICATION_JSON).content(planFree)).andExpect(status().isCreated());
+
+        mvc.perform(get("/api/v1/superadmin/codes").cookie(danilo)).andExpect(jsonPath("$.totalElements", is(2)));
+        mvc.perform(get("/api/v1/superadmin/codes").cookie(owner)).andExpect(jsonPath("$.totalElements", is(0)));
+        mvc.perform(get("/api/v1/superadmin/codes").param("scope", "others").cookie(owner))
+                .andExpect(jsonPath("$.totalElements", is(2)));
     }
 
     @Test

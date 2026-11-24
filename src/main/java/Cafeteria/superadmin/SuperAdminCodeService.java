@@ -34,8 +34,10 @@ public class SuperAdminCodeService {
     private final JdbcTemplate jdbc;
     private final PlanService plans;
     private final SuperAdminService businesses;
+    private final SuperAdminScopes scopes;
 
-    public SuperAdminCodeService(JdbcTemplate jdbc, PlanService plans, SuperAdminService businesses) {
+    public SuperAdminCodeService(JdbcTemplate jdbc, PlanService plans, SuperAdminService businesses, SuperAdminScopes scopes) {
+        this.scopes = scopes;
         this.jdbc = jdbc;
         this.plans = plans;
         this.businesses = businesses;
@@ -51,11 +53,12 @@ public class SuperAdminCodeService {
     }
 
     @Transactional(readOnly = true)
-    public CodePage list(String status, Integer durationMonths, UUID batchId, String query, int page, int size) {
+    public CodePage list(SuperAdminScopes.Viewer viewer, String status, Integer durationMonths, UUID batchId, String query, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 500);
         int safePage = Math.max(page, 0);
         StringBuilder where = new StringBuilder(" WHERE 1 = 1");
         List<Object> args = new ArrayList<>();
+        where.append(scopes.authorFilter(viewer, "b.created_by", args));
         if (status != null && List.of("AVAILABLE", "REDEEMED", "DISABLED").contains(status.toUpperCase())) {
             where.append(" AND c.status = ?");
             args.add(status.toUpperCase());
@@ -94,33 +97,43 @@ public class SuperAdminCodeService {
     }
 
     @Transactional(readOnly = true)
-    public List<BatchRow> batches() {
+    public List<BatchRow> batches(SuperAdminScopes.Viewer viewer) {
+        List<Object> args = new ArrayList<>();
+        String scope = scopes.authorFilter(viewer, "b.created_by", args);
         return jdbc.query("SELECT b.id, b.label, b.duration_months, b.quantity, b.note, b.created_by, b.created_at, b.plan_code, "
                 + "count(*) FILTER (WHERE c.status = 'AVAILABLE') AS available, "
                 + "count(*) FILTER (WHERE c.status = 'REDEEMED') AS redeemed, "
                 + "count(*) FILTER (WHERE c.status = 'DISABLED') AS disabled "
-                + "FROM code_batches b LEFT JOIN activation_codes c ON c.batch_id = b.id "
+                + "FROM code_batches b LEFT JOIN activation_codes c ON c.batch_id = b.id WHERE 1 = 1" + scope + " "
                 + "GROUP BY b.id ORDER BY b.created_at DESC LIMIT 100",
                 (rs, i) -> new BatchRow(rs.getObject("id", UUID.class), rs.getString("label"), rs.getInt("duration_months"),
                         rs.getInt("quantity"), rs.getString("note"), rs.getString("created_by"),
                         rs.getTimestamp("created_at").toInstant(), rs.getLong("available"), rs.getLong("redeemed"),
-                        rs.getLong("disabled"), rs.getString("plan_code")));
+                        rs.getLong("disabled"), rs.getString("plan_code")), args.toArray());
     }
 
     @Transactional(readOnly = true)
-    public CodeStats stats() {
+    public CodeStats stats(SuperAdminScopes.Viewer viewer) {
         long[] byStatus = new long[3];
-        jdbc.query("SELECT status, count(*) FROM activation_codes GROUP BY status", rs -> {
+        List<Object> codeArgs = new ArrayList<>();
+        String byAuthor = scopes.authorFilter(viewer, "b.created_by", codeArgs);
+        jdbc.query("SELECT c.status, count(*) FROM activation_codes c JOIN code_batches b ON b.id = c.batch_id WHERE 1 = 1"
+                + byAuthor + " GROUP BY c.status", rs -> {
             switch (rs.getString(1)) {
                 case "AVAILABLE" -> byStatus[0] = rs.getLong(2);
                 case "REDEEMED" -> byStatus[1] = rs.getLong(2);
                 case "DISABLED" -> byStatus[2] = rs.getLong(2);
                 default -> { }
             }
-        });
-        Long soon = jdbc.queryForObject("SELECT count(*) FROM tenants WHERE plan_expires_at > now() "
-                + "AND plan_expires_at <= now() + interval '7 days'", Long.class);
-        Long expired = jdbc.queryForObject("SELECT count(*) FROM tenants WHERE plan_expires_at <= now()", Long.class);
+        }, codeArgs.toArray());
+        List<Object> soonArgs = new ArrayList<>();
+        String soonScope = scopes.tenantFilter(viewer, soonArgs);
+        Long soon = jdbc.queryForObject("SELECT count(*) FROM tenants t WHERE t.plan_expires_at > now() "
+                + "AND t.plan_expires_at <= now() + interval '7 days'" + soonScope, Long.class, soonArgs.toArray());
+        List<Object> expiredArgs = new ArrayList<>();
+        String expiredScope = scopes.tenantFilter(viewer, expiredArgs);
+        Long expired = jdbc.queryForObject("SELECT count(*) FROM tenants t WHERE t.plan_expires_at <= now()" + expiredScope,
+                Long.class, expiredArgs.toArray());
         return new CodeStats(byStatus[0], byStatus[1], byStatus[2], soon == null ? 0 : soon, expired == null ? 0 : expired);
     }
 

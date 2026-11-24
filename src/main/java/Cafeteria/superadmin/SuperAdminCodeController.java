@@ -37,11 +37,13 @@ public class SuperAdminCodeController {
             @Size(max = 20) String planCode) {}
 
     private final SuperAdminCodeService service;
+    private final SuperAdminScopes scopes;
     private final boolean trustForwardedFor;
 
-    public SuperAdminCodeController(SuperAdminCodeService service,
+    public SuperAdminCodeController(SuperAdminCodeService service, SuperAdminScopes scopes,
             @Value("${security.trust-forwarded-for:false}") boolean trustForwardedFor) {
         this.service = service;
+        this.scopes = scopes;
         this.trustForwardedFor = trustForwardedFor;
     }
 
@@ -53,31 +55,34 @@ public class SuperAdminCodeController {
     }
 
     @GetMapping("/batches")
-    public List<BatchRow> batches() {
-        return service.batches();
+    public List<BatchRow> batches(@RequestParam(required = false) String scope, Authentication auth) {
+        return service.batches(scopes.viewer(auth, scope));
     }
 
     @GetMapping("/stats")
-    public CodeStats stats() {
-        return service.stats();
+    public CodeStats stats(@RequestParam(required = false) String scope, Authentication auth) {
+        return service.stats(scopes.viewer(auth, scope));
     }
 
     @GetMapping
     public CodePage list(@RequestParam(required = false) String status, @RequestParam(required = false) Integer durationMonths,
             @RequestParam(required = false) UUID batchId, @RequestParam(required = false) String query,
-            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-        return service.list(status, durationMonths, batchId, query, page, size);
+            @RequestParam(required = false) String scope, @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, Authentication auth) {
+        return service.list(scopes.viewer(auth, scope), status, durationMonths, batchId, query, page, size);
     }
 
     @PostMapping("/{id}/disable")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void disable(@PathVariable UUID id, Authentication auth, HttpServletRequest request) {
+        scopes.requireBatchOfCode(scopes.viewer(auth, null), id);
         service.disable(id, auth.getName(), ClientIp.resolve(request, trustForwardedFor));
     }
 
     @PostMapping("/{id}/enable")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void enable(@PathVariable UUID id, Authentication auth, HttpServletRequest request) {
+        scopes.requireBatchOfCode(scopes.viewer(auth, null), id);
         service.enable(id, auth.getName(), ClientIp.resolve(request, trustForwardedFor));
     }
 
@@ -85,6 +90,7 @@ public class SuperAdminCodeController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID id, @RequestBody(required = false) SuperAdminDtos.OptionalDelete body,
             Authentication auth, HttpServletRequest request) {
+        scopes.requireBatchOfCode(scopes.viewer(auth, null), id);
         service.delete(id, body == null ? null : body.confirmSlug(), auth.getName(), ClientIp.resolve(request, trustForwardedFor));
     }
 }

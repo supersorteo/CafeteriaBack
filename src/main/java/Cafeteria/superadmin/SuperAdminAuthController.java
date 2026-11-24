@@ -24,10 +24,12 @@ public class SuperAdminAuthController {
 
     private final SuperAdminAuthService auth;
     private final SuperAdminAccounts accounts;
+    private final SuperAdminScopes scopes;
 
-    public SuperAdminAuthController(SuperAdminAuthService auth, SuperAdminAccounts accounts) {
+    public SuperAdminAuthController(SuperAdminAuthService auth, SuperAdminAccounts accounts, SuperAdminScopes scopes) {
         this.auth = auth;
         this.accounts = accounts;
+        this.scopes = scopes;
     }
 
     @PostMapping("/login")
@@ -45,9 +47,10 @@ public class SuperAdminAuthController {
     public MeResponse me(Authentication authentication) {
         if (authentication.getPrincipal() instanceof SuperAdminPrincipal principal) {
             return new MeResponse(principal.getUsername(), principal.role(), principal.regions(), principal.mustChangePassword(),
-                    accounts.find(principal.getUsername()).isPresent());
+                    accounts.find(principal.getUsername()).isPresent(), scopes.viewer(authentication, null).owner());
         }
-        return new MeResponse(authentication.getName(), SuperAdminAccounts.ADMIN, java.util.List.of(), false, false);
+        return new MeResponse(authentication.getName(), SuperAdminAccounts.ADMIN, java.util.List.of(), false, false,
+                scopes.viewer(authentication, null).owner());
     }
 
     @PostMapping("/password")

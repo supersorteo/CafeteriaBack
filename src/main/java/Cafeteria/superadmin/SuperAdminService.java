@@ -32,9 +32,11 @@ public class SuperAdminService {
     private final TenantRepository tenants;
     private final MediaService media;
     private final FindByIndexNameSessionRepository<? extends Session> sessions;
+    private final SuperAdminScopes scopes;
 
     public SuperAdminService(JdbcTemplate jdbc, TenantRepository tenants, MediaService media,
-            FindByIndexNameSessionRepository<? extends Session> sessions) {
+            FindByIndexNameSessionRepository<? extends Session> sessions, SuperAdminScopes scopes) {
+        this.scopes = scopes;
         this.jdbc = jdbc;
         this.tenants = tenants;
         this.media = media;
@@ -42,20 +44,23 @@ public class SuperAdminService {
     }
 
     @Transactional(readOnly = true)
-    public Stats stats() {
+    public Stats stats(SuperAdminScopes.Viewer viewer) {
+        List<Object> args = new ArrayList<>();
+        String scope = scopes.tenantFilter(viewer, args);
         return jdbc.queryForObject("SELECT count(*), count(*) FILTER (WHERE suspended_at IS NULL), "
                 + "count(*) FILTER (WHERE suspended_at IS NOT NULL), "
                 + "count(*) FILTER (WHERE published AND suspended_at IS NULL), "
-                + "count(*) FILTER (WHERE created_at > now() - interval '7 days') FROM tenants",
-                (rs, i) -> new Stats(rs.getLong(1), rs.getLong(2), rs.getLong(3), rs.getLong(4), rs.getLong(5)));
+                + "count(*) FILTER (WHERE t.created_at > now() - interval '7 days') FROM tenants t WHERE 1 = 1" + scope,
+                (rs, i) -> new Stats(rs.getLong(1), rs.getLong(2), rs.getLong(3), rs.getLong(4), rs.getLong(5)), args.toArray());
     }
 
     @Transactional(readOnly = true)
-    public TenantPage list(String query, String status, int page, int size) {
+    public TenantPage list(SuperAdminScopes.Viewer viewer, String query, String status, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 100);
         int safePage = Math.max(page, 0);
         StringBuilder where = new StringBuilder(" WHERE 1 = 1");
         List<Object> args = new ArrayList<>();
+        where.append(scopes.tenantFilter(viewer, args));
         if (query != null && !query.isBlank()) {
             String like = "%" + query.strip().toLowerCase().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
             where.append(" AND (lower(t.name) LIKE ? OR lower(t.slug) LIKE ? OR lower(u.email) LIKE ?)");
@@ -163,12 +168,15 @@ public class SuperAdminService {
     }
 
     @Transactional(readOnly = true)
-    public List<AuditEntry> audit(int limit) {
-        return jdbc.query("SELECT id, at, action, target_label, actor, ip, detail FROM audit_log ORDER BY at DESC LIMIT ?",
+    public List<AuditEntry> audit(SuperAdminScopes.Viewer viewer, int limit) {
+        List<Object> args = new ArrayList<>();
+        String scope = scopes.authorFilter(viewer, "actor", args);
+        args.add(Math.min(Math.max(limit, 1), 200));
+        return jdbc.query("SELECT id, at, action, target_label, actor, ip, detail FROM audit_log WHERE 1 = 1" + scope + " ORDER BY at DESC LIMIT ?",
                 (rs, i) -> new AuditEntry(rs.getObject("id", UUID.class), rs.getTimestamp("at").toInstant(),
                         rs.getString("action"), rs.getString("target_label"), rs.getString("actor"), rs.getString("ip"),
                         rs.getString("detail")),
-                Math.min(Math.max(limit, 1), 200));
+                args.toArray());
     }
 
     private List<String> memberEmails(UUID tenantId) {

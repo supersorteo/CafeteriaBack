@@ -18,7 +18,7 @@ public final class SuperAdminDtos {
     public record LoginResponse(String step, String maskedEmail, int expiresInSeconds) {}
 
     public record MeResponse(String email, String role, List<String> regions, boolean mustChangePassword,
-            boolean canChangePassword) {}
+            boolean canChangePassword, boolean owner) {}
 
     public record ChangePasswordRequest(@NotBlank @Size(max = 200) String current, @NotBlank @Size(max = 100) String next) {}
 
