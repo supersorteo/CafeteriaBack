@@ -36,3 +36,16 @@ java -jar target/cafeteria-0.0.1-SNAPSHOT.jar
 
 ## Tests
 `./mvnw test` usa tu `application.properties` local y un esquema aparte (`test_it`) de tu base de desarrollo.
+
+## Cuentas adicionales de superadmin (V8)
+
+La cuenta principal sigue definiéndose con `SUPERADMIN_EMAIL` y `SUPERADMIN_PASSWORD` y no cambia. Una segunda cuenta se crea **al arrancar** si están definidas estas variables (si la cuenta ya existe, no se toca, así la contraseña que cambie la persona se conserva):
+
+| Variable | Valor |
+|---|---|
+| `SUPERADMIN_OPERATOR_EMAIL` | Correo de la persona. Recibe su propio código de 6 dígitos al iniciar sesión. |
+| `SUPERADMIN_OPERATOR_PASSWORD` | Contraseña **temporal** (mínimo 8 caracteres). Debe cambiarla en el primer ingreso. |
+| `SUPERADMIN_OPERATOR_ROLE` | `OPERATOR` (por defecto, solo lectura de negocios y actividad) o `ADMIN` (todos los permisos). |
+| `SUPERADMIN_OPERATOR_REGIONS` | Regiones de cobro que atiende, por ejemplo `AR`. |
+
+Tras el primer ingreso se pueden quitar `SUPERADMIN_OPERATOR_EMAIL` y `SUPERADMIN_OPERATOR_PASSWORD` de las variables: la cuenta queda guardada con la contraseña cifrada.

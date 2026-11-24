@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import Cafeteria.superadmin.SuperAdminDtos.ChangePasswordRequest;
 import Cafeteria.superadmin.SuperAdminDtos.CodeRequest;
 import Cafeteria.superadmin.SuperAdminDtos.LoginRequest;
 import Cafeteria.superadmin.SuperAdminDtos.LoginResponse;
@@ -22,9 +23,11 @@ import jakarta.validation.Valid;
 public class SuperAdminAuthController {
 
     private final SuperAdminAuthService auth;
+    private final SuperAdminAccounts accounts;
 
-    public SuperAdminAuthController(SuperAdminAuthService auth) {
+    public SuperAdminAuthController(SuperAdminAuthService auth, SuperAdminAccounts accounts) {
         this.auth = auth;
+        this.accounts = accounts;
     }
 
     @PostMapping("/login")
@@ -40,7 +43,18 @@ public class SuperAdminAuthController {
 
     @GetMapping("/me")
     public MeResponse me(Authentication authentication) {
-        return new MeResponse(authentication.getName());
+        if (authentication.getPrincipal() instanceof SuperAdminPrincipal principal) {
+            return new MeResponse(principal.getUsername(), principal.role(), principal.regions(), principal.mustChangePassword(),
+                    accounts.find(principal.getUsername()).isPresent());
+        }
+        return new MeResponse(authentication.getName(), SuperAdminAccounts.ADMIN, java.util.List.of(), false, false);
+    }
+
+    @PostMapping("/password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest body, Authentication authentication,
+            HttpServletRequest request, HttpServletResponse response) {
+        auth.changePassword(body.current(), body.next(), (SuperAdminPrincipal) authentication.getPrincipal(), request, response);
     }
 
     @PostMapping("/logout")

@@ -53,7 +53,11 @@ public class SecurityConfig {
                 .cors(cors -> cors.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, loginPath, verifyPath).permitAll()
-                        .anyRequest().hasRole("SUPERADMIN"))
+                        .requestMatchers(API + "/superadmin/auth/me", API + "/superadmin/auth/password",
+                                API + "/superadmin/auth/logout").hasAnyRole("SUPERADMIN", "PASSWORD_CHANGE")
+                        .requestMatchers(HttpMethod.GET, API + "/superadmin/codes/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, API + "/superadmin/**").hasRole("SUPERADMIN")
+                        .anyRequest().hasRole("ADMIN"))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, exception) -> ProblemResponses.write(response,
                                 HttpStatus.UNAUTHORIZED, "unauthenticated", "Sesión requerida"))

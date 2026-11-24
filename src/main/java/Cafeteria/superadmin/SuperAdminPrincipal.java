@@ -15,14 +15,39 @@ public class SuperAdminPrincipal implements UserDetails, Serializable {
     private static final long serialVersionUID = 1L;
 
     private final String email;
+    private String role;
+    private String regions;
+    private boolean mustChangePassword;
 
     public SuperAdminPrincipal(String email) {
+        this(email, SuperAdminAccounts.ADMIN, "", false);
+    }
+
+    public SuperAdminPrincipal(String email, String role, String regions, boolean mustChangePassword) {
         this.email = email;
+        this.role = role;
+        this.regions = regions;
+        this.mustChangePassword = mustChangePassword;
+    }
+
+    public String role() {
+        return role == null ? SuperAdminAccounts.ADMIN : role;
+    }
+
+    public List<String> regions() {
+        return regions == null || regions.isBlank() ? List.of() : List.of(regions.split(","));
+    }
+
+    public boolean mustChangePassword() {
+        return mustChangePassword;
     }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_SUPERADMIN"));
+        if (mustChangePassword) {
+            return List.of(new SimpleGrantedAuthority("ROLE_PASSWORD_CHANGE"));
+        }
+        return List.of(new SimpleGrantedAuthority("ROLE_SUPERADMIN"), new SimpleGrantedAuthority("ROLE_" + role()));
     }
 
     @Override
