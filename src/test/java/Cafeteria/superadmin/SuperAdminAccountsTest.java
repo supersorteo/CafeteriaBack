@@ -240,6 +240,16 @@ class SuperAdminAccountsTest extends IntegrationTestSupport {
     }
 
     @Test
+    void cambiarLasRegionesDeUnaCuentaTambienCierraSuSesionAbierta() throws Exception {
+        account(SuperAdminAccounts.OPERATOR, false);
+        Cookie session = signIn(OTHER, TEMP_PASSWORD);
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(session)).andExpect(status().isOk());
+
+        jdbc.update("UPDATE superadmin_accounts SET regions = 'UY'");
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(session)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void cambiarLaContrasenaCierraLasOtrasSesionesDeLaMismaCuenta() throws Exception {
         account(SuperAdminAccounts.OPERATOR, false);
         Cookie first = signIn(OTHER, TEMP_PASSWORD);

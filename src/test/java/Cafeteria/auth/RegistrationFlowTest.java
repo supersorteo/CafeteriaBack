@@ -169,6 +169,9 @@ class RegistrationFlowTest extends IntegrationTestSupport {
         postJson("/api/v1/auth/register", registerJson("a@cafe.test", "admin"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("slug_reserved"));
+        postJson("/api/v1/auth/register", registerJson("a@cafe.test", "la-terraza"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("slug_reserved"));
         postJson("/api/v1/auth/register",
                 "{\"email\":\"a@cafe.test\",\"password\":\"corta\",\"businessName\":\"X\",\"slug\":\"cafe-ok\",\"activationCode\":\"" + newCode(1) + "\"}")
                 .andExpect(status().isBadRequest());
