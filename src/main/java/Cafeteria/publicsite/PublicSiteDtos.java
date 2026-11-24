@@ -28,7 +28,8 @@ public final class PublicSiteDtos {
 
     public record Reservation(List<String> areas, List<String> partySizes) {}
 
-    public record Item(UUID id, String name, String description, BigDecimal price, String tag, String imageUrl) {}
+    public record Item(UUID id, String name, String description, BigDecimal price, String tag, String imageUrl,
+            List<String> ingredients) {}
 
     public record PublicCategory(UUID id, String name, List<Item> items) {}
 
@@ -36,5 +37,5 @@ public final class PublicSiteDtos {
             String currency, String locale, String timezone, Theme theme, Contact contact, Hero hero, About about,
             List<GalleryItem> gallery, List<String> marquee, List<Stat> stats, List<Highlight> highlights,
             Reservation reservation, List<PublicCategory> categories, String logoUrl, List<Space> spaces,
-            boolean reservationsEnabled) {}
+            boolean reservationsEnabled, List<Cafeteria.coupon.CouponService.PublicCoupon> coupons) {}
 }

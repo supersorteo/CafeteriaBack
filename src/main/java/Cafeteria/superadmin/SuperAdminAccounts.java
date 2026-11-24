@@ -79,6 +79,17 @@ public class SuperAdminAccounts {
     }
 
     @Transactional
+    public void sync(UUID id, String role, String regions, boolean enabled) {
+        jdbc.update("UPDATE superadmin_accounts SET role = ?, regions = ?, enabled = ? WHERE id = ?", role,
+                regions == null ? "" : regions.strip().toUpperCase(), enabled, id);
+    }
+
+    @Transactional
+    public void setEnabled(String email, boolean enabled) {
+        jdbc.update("UPDATE superadmin_accounts SET enabled = ? WHERE email = ?", enabled, normalize(email));
+    }
+
+    @Transactional
     public void touchLogin(UUID id) {
         jdbc.update("UPDATE superadmin_accounts SET last_login_at = now() WHERE id = ?", id);
     }

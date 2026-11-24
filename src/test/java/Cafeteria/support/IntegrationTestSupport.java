@@ -110,6 +110,10 @@ public abstract class IntegrationTestSupport {
         jdbc.execute("TRUNCATE site_images, menu_items, categories, media_assets, tenant_users, account_tokens, "
                 + "email_outbox, audit_log, activation_codes, code_batches, superadmin_accounts, tenants, users CASCADE");
         jdbc.execute("TRUNCATE spring_session CASCADE");
+        jdbc.update("UPDATE billing_plans SET max_menu_items = 50, max_active_coupons = 15, max_gallery = 6, max_table_qr = 0, "
+                + "full_branding = FALSE, advanced_coupons = FALSE, table_qr = FALSE, priority_support = FALSE WHERE code = 'EMPRENDEDOR'");
+        jdbc.update("UPDATE billing_plans SET max_menu_items = 100, max_active_coupons = 35, max_gallery = 15, max_table_qr = 30, "
+                + "full_branding = TRUE, advanced_coupons = TRUE, table_qr = TRUE, priority_support = TRUE WHERE code = 'PROFESIONAL'");
     }
 
     protected String newCode(int months) {

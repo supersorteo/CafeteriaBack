@@ -370,6 +370,20 @@ class ActivationCodesTest extends IntegrationTestSupport {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE email = 'owner@cascada.test'", Long.class)).isZero();
     }
 
+    @Test
+    void elLoteLlevaElPlanYElListadoYElResumenLoMuestran() throws Exception {
+        mvc.perform(withXsrf(post("/api/v1/superadmin/codes/batches").cookie(sa), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"label\":\"Basico\",\"durationMonths\":1,\"quantity\":2,\"planCode\":\"EMPRENDEDOR\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.planCode").value("EMPRENDEDOR"));
+
+        mvc.perform(get("/api/v1/superadmin/codes").cookie(sa)).andExpect(jsonPath("$.content[0].planCode").value("EMPRENDEDOR"));
+        mvc.perform(get("/api/v1/superadmin/codes/batches").cookie(sa)).andExpect(jsonPath("$[0].planCode").value("EMPRENDEDOR"));
+        mvc.perform(withXsrf(post("/api/v1/superadmin/codes/batches").cookie(sa), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"durationMonths\":1,\"quantity\":1}")).andExpect(jsonPath("$.planCode").value("PROFESIONAL"));
+        mvc.perform(withXsrf(post("/api/v1/superadmin/codes/batches").cookie(sa), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"durationMonths\":1,\"quantity\":1,\"planCode\":\"NOEXISTE\"}")).andExpect(status().isBadRequest());
+    }
+
     private long count(String table) {
         return jdbc.queryForObject("SELECT count(*) FROM " + table, Long.class);
     }

@@ -103,6 +103,9 @@ public class Tenant {
     @Column(name = "plan_months")
     private Integer planMonths;
 
+    @Column(name = "plan_code")
+    private String planCode;
+
     @Column(name = "business_title_color")
     private String businessTitleColor;
 

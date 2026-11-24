@@ -83,6 +83,7 @@ public class RegistrationService {
         Cafeteria.plan.PlanService.Redemption redemption = plans.redeemForRegistration(request.activationCode(), tenant.getId(), email);
         tenant.setPlanExpiresAt(redemption.expiresAt());
         tenant.setPlanMonths(redemption.months());
+        tenant.setPlanCode(redemption.planCode());
         tenants.saveAndFlush(tenant);
         memberships.saveAndFlush(new TenantUser(user.getId(), tenant.getId(), Role.OWNER));
         accounts.issueVerification(user);

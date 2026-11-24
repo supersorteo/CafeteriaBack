@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import Cafeteria.shared.ApiException;
+import Cafeteria.seed.DemoSiteSeeder;
 import Cafeteria.tenant.Tenant;
 import Cafeteria.tenant.TenantRepository;
 
@@ -20,28 +21,29 @@ public class PlanService {
 
     public enum Status { ACTIVE, EXPIRED }
 
-    public record Batch(UUID id, String label, int durationMonths, List<String> codes) {}
+    public record Batch(UUID id, String label, int durationMonths, List<String> codes, String planCode) {}
 
-    public static final int QR_CUSTOMIZATION_MIN_MONTHS = 3;
+    public record Plan(Instant expiresAt, Status status, Integer months, boolean qrCustomization, String planCode) {}
 
-    public record Plan(Instant expiresAt, Status status, Integer months, boolean qrCustomization) {}
-
-    public record Redemption(Instant expiresAt, int months) {}
+    public record Redemption(Instant expiresAt, int months, String planCode) {}
 
     private final JdbcTemplate jdbc;
     private final TenantRepository tenants;
+    private final Entitlements entitlements;
 
-    public PlanService(JdbcTemplate jdbc, TenantRepository tenants) {
+    public PlanService(JdbcTemplate jdbc, TenantRepository tenants, Entitlements entitlements) {
         this.jdbc = jdbc;
         this.tenants = tenants;
+        this.entitlements = entitlements;
     }
 
     public static Plan planOf(Tenant tenant) {
-        Instant expires = tenant.getPlanExpiresAt();
+        boolean demo = DemoSiteSeeder.SLUG.equals(tenant.getSlug());
+        Instant expires = demo ? null : tenant.getPlanExpiresAt();
         boolean expired = expires != null && !expires.isAfter(Instant.now());
         Integer months = tenant.getPlanMonths();
-        return new Plan(expires, expired ? Status.EXPIRED : Status.ACTIVE, months,
-                months == null || months >= QR_CUSTOMIZATION_MIN_MONTHS);
+        String planCode = tenant.getPlanCode() == null ? Entitlements.DEFAULT_PLAN : tenant.getPlanCode();
+        return new Plan(expires, expired ? Status.EXPIRED : Status.ACTIVE, months, true, planCode);
     }
 
     public static Instant plusMonths(Instant from, int months) {
@@ -56,6 +58,15 @@ public class PlanService {
 
     @Transactional
     public Batch generateBatch(String label, int durationMonths, int quantity, String note, String actor) {
+        return generateBatch(label, durationMonths, quantity, note, actor, null);
+    }
+
+    @Transactional
+    public Batch generateBatch(String label, int durationMonths, int quantity, String note, String actor, String planCode) {
+        String plan = planCode == null || planCode.isBlank() ? Entitlements.DEFAULT_PLAN : planCode.strip().toUpperCase();
+        if (!entitlements.exists(plan)) {
+            throw ApiException.invalidField("planCode", "El plan no existe");
+        }
         if (!ActivationCodeFormat.DURATIONS.contains(durationMonths)) {
             throw ApiException.invalidField("durationMonths", "La duración debe ser de 1, 3, 6 o 12 meses");
         }
@@ -64,18 +75,18 @@ public class PlanService {
         }
         UUID batchId = UUID.randomUUID();
         String cleanLabel = label == null || label.isBlank() ? durationMonths + " meses" : label.strip();
-        jdbc.update("INSERT INTO code_batches (id, label, duration_months, quantity, note, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-                batchId, cleanLabel, durationMonths, quantity, note == null || note.isBlank() ? null : note.strip(), actor);
+        jdbc.update("INSERT INTO code_batches (id, label, duration_months, quantity, note, created_by, plan_code) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                batchId, cleanLabel, durationMonths, quantity, note == null || note.isBlank() ? null : note.strip(), actor, plan);
         List<String> codes = new ArrayList<>(quantity);
         while (codes.size() < quantity) {
             String code = ActivationCodeFormat.generate();
-            int inserted = jdbc.update("INSERT INTO activation_codes (id, code, batch_id, duration_months) "
-                    + "VALUES (?, ?, ?, ?) ON CONFLICT (code) DO NOTHING", UUID.randomUUID(), code, batchId, durationMonths);
+            int inserted = jdbc.update("INSERT INTO activation_codes (id, code, batch_id, duration_months, plan_code) "
+                    + "VALUES (?, ?, ?, ?, ?) ON CONFLICT (code) DO NOTHING", UUID.randomUUID(), code, batchId, durationMonths, plan);
             if (inserted == 1) {
                 codes.add(code);
             }
         }
-        return new Batch(batchId, cleanLabel, durationMonths, codes);
+        return new Batch(batchId, cleanLabel, durationMonths, codes, plan);
     }
 
     @Transactional(readOnly = true)
@@ -92,26 +103,29 @@ public class PlanService {
     @Transactional
     public Redemption redeemForRegistration(String rawCode, UUID tenantId, String email) {
         String code = ActivationCodeFormat.normalize(rawCode);
-        List<Integer> months = code.isEmpty() ? List.of() : jdbc.query(
+        List<Redemption> found = code.isEmpty() ? List.of() : jdbc.query(
                 "UPDATE activation_codes SET status = 'REDEEMED', redeemed_at = now(), redeemed_by_email = ?, tenant_id = ? "
-                        + "WHERE code = ? AND status = 'AVAILABLE' RETURNING duration_months",
-                (rs, i) -> rs.getInt(1), email, tenantId, code);
-        if (months.isEmpty()) {
+                        + "WHERE code = ? AND status = 'AVAILABLE' RETURNING duration_months, plan_code",
+                (rs, i) -> new Redemption(plusMonths(Instant.now(), rs.getInt(1)), rs.getInt(1),
+                        rs.getString(2) == null ? Entitlements.DEFAULT_PLAN : rs.getString(2)), email, tenantId, code);
+        if (found.isEmpty()) {
             throw invalidCode();
         }
-        return new Redemption(plusMonths(Instant.now(), months.get(0)), months.get(0));
+        return found.get(0);
     }
 
     @Transactional
     public Plan renew(UUID tenantId, String rawCode, String email) {
         Tenant tenant = tenants.lockById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
         String code = ActivationCodeFormat.normalize(rawCode);
-        List<Integer> months = code.isEmpty() ? List.of() : jdbc.query(
-                "SELECT duration_months FROM activation_codes WHERE code = ? AND status = 'AVAILABLE' FOR UPDATE",
-                (rs, i) -> rs.getInt(1), code);
-        if (months.isEmpty()) {
+        List<Object[]> found = code.isEmpty() ? List.of() : jdbc.query(
+                "SELECT duration_months, plan_code FROM activation_codes WHERE code = ? AND status = 'AVAILABLE' FOR UPDATE",
+                (rs, i) -> new Object[] { rs.getInt(1), rs.getString(2) == null ? Entitlements.DEFAULT_PLAN : rs.getString(2) }, code);
+        if (found.isEmpty()) {
             throw invalidCode();
         }
+        List<Integer> months = List.of((Integer) found.get(0)[0]);
+        String newPlan = (String) found.get(0)[1];
         jdbc.update("DELETE FROM activation_codes WHERE tenant_id = ?", tenantId);
         jdbc.update("UPDATE activation_codes SET status = 'REDEEMED', redeemed_at = now(), redeemed_by_email = ?, tenant_id = ? "
                 + "WHERE code = ?", email, tenantId, code);
@@ -120,6 +134,7 @@ public class PlanService {
         Instant base = current != null && current.isAfter(now) ? current : now;
         tenant.setPlanExpiresAt(plusMonths(base, months.get(0)));
         tenant.setPlanMonths(months.get(0));
+        tenant.setPlanCode(newPlan);
         tenants.saveAndFlush(tenant);
         audit("PLAN_RENEWED", tenant, email, code + " (" + months.get(0) + " meses)");
         return planOf(tenant);

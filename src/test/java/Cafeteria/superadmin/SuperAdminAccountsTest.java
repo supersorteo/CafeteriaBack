@@ -193,7 +193,7 @@ class SuperAdminAccountsTest extends IntegrationTestSupport {
         SuperAdminProperties primary = new SuperAdminProperties(MAIN, MAIN_PASSWORD,
                 new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder());
         SuperAdminAccountBootstrap bootstrap = new SuperAdminAccountBootstrap(accounts, primary, " Nueva.Cuenta@Ejemplo.test ",
-                TEMP_PASSWORD, "operator", "ar");
+                TEMP_PASSWORD, "operator", "ar", true);
 
         bootstrap.run(null);
         bootstrap.run(null);
@@ -216,11 +216,58 @@ class SuperAdminAccountsTest extends IntegrationTestSupport {
         SuperAdminProperties primary = new SuperAdminProperties(MAIN, MAIN_PASSWORD,
                 new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder());
 
-        new SuperAdminAccountBootstrap(accounts, primary, MAIN, TEMP_PASSWORD, "OPERATOR", "AR").run(null);
-        new SuperAdminAccountBootstrap(accounts, primary, "", "", "OPERATOR", "AR").run(null);
+        new SuperAdminAccountBootstrap(accounts, primary, MAIN, TEMP_PASSWORD, "OPERATOR", "AR", true).run(null);
+        new SuperAdminAccountBootstrap(accounts, primary, "", "", "OPERATOR", "AR", true).run(null);
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM superadmin_accounts", Long.class)).isZero();
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
-                () -> new SuperAdminAccountBootstrap(accounts, primary, OTHER, "", "OPERATOR", "AR").run(null));
+                () -> new SuperAdminAccountBootstrap(accounts, primary, OTHER, "", "OPERATOR", "AR", true).run(null));
+    }
+
+    @Test
+    void deshabilitarOCambiarElRolDeUnaCuentaCierraSuSesionAbiertaDeInmediato() throws Exception {
+        account(SuperAdminAccounts.OPERATOR, false);
+        Cookie session = signIn(OTHER, TEMP_PASSWORD);
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(session)).andExpect(status().isOk());
+
+        jdbc.update("UPDATE superadmin_accounts SET role = 'ADMIN'");
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(session)).andExpect(status().isUnauthorized());
+
+        Cookie second = signIn(OTHER, TEMP_PASSWORD);
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(second)).andExpect(status().isOk());
+        jdbc.update("UPDATE superadmin_accounts SET enabled = FALSE");
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(second)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void cambiarLaContrasenaCierraLasOtrasSesionesDeLaMismaCuenta() throws Exception {
+        account(SuperAdminAccounts.OPERATOR, false);
+        Cookie first = signIn(OTHER, TEMP_PASSWORD);
+        Cookie second = signIn(OTHER, TEMP_PASSWORD);
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(first)).andExpect(status().isOk());
+
+        MockHttpServletResponse done = changePassword(second, TEMP_PASSWORD, NEW_PASSWORD);
+
+        assertThat(done.getStatus()).isEqualTo(204);
+        Cookie renewed = done.getCookie("SA_SESSION") != null ? done.getCookie("SA_SESSION") : second;
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(renewed)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/superadmin/stats").cookie(first)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void elArranqueSincronizaRolRegionesYEstadoConLaConfiguracion() throws Exception {
+        SuperAdminProperties primary = new SuperAdminProperties(MAIN, MAIN_PASSWORD,
+                new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder());
+        new SuperAdminAccountBootstrap(accounts, primary, OTHER, TEMP_PASSWORD, "ADMIN", "AR", true).run(null);
+        assertThat(accounts.find(OTHER).orElseThrow().role()).isEqualTo("ADMIN");
+
+        new SuperAdminAccountBootstrap(accounts, primary, OTHER, TEMP_PASSWORD, "OPERATOR", "UY", true).run(null);
+        SuperAdminAccounts.Account downgraded = accounts.find(OTHER).orElseThrow();
+        assertThat(downgraded.role()).isEqualTo("OPERATOR");
+        assertThat(downgraded.regions()).isEqualTo("UY");
+
+        new SuperAdminAccountBootstrap(accounts, primary, OTHER, "", "OPERATOR", "UY", false).run(null);
+        assertThat(accounts.find(OTHER).orElseThrow().enabled()).isFalse();
+        assertThat(login(OTHER, TEMP_PASSWORD).getResponse().getStatus()).isEqualTo(401);
     }
 }

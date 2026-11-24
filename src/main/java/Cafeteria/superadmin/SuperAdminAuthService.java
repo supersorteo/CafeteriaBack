@@ -20,6 +20,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
 
 import Cafeteria.mail.EmailMessage;
@@ -47,6 +49,7 @@ public class SuperAdminAuthService {
 
     private final SuperAdminProperties config;
     private final SuperAdminAccounts accounts;
+    private final FindByIndexNameSessionRepository<? extends Session> sessions;
     private final EmailSender mail;
     private final SecureRandom random = new SecureRandom();
     private final HttpSessionSecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
@@ -55,9 +58,11 @@ public class SuperAdminAuthService {
     private Clock clock = Clock.systemUTC();
     private long penaltyMillis = 1500;
 
-    public SuperAdminAuthService(SuperAdminProperties config, SuperAdminAccounts accounts, EmailSender mail) {
+    public SuperAdminAuthService(SuperAdminProperties config, SuperAdminAccounts accounts,
+            FindByIndexNameSessionRepository<? extends Session> sessions, EmailSender mail) {
         this.config = config;
         this.accounts = accounts;
+        this.sessions = sessions;
         this.mail = mail;
     }
 
@@ -174,7 +179,12 @@ public class SuperAdminAuthService {
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(updated, null, updated.getAuthorities()));
         SecurityContextHolder.setContext(context);
+        String previousId = request.getSession().getId();
+        request.changeSessionId();
         contextRepository.saveContext(context, request, response);
+        String currentId = request.getSession().getId();
+        sessions.findByPrincipalName(account.email()).keySet().stream()
+                .filter(id -> !id.equals(currentId) && !id.equals(previousId)).forEach(sessions::deleteById);
     }
 
     public void logout(HttpServletRequest request) {

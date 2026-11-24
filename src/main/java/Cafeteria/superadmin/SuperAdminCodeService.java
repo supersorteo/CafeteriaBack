@@ -19,12 +19,12 @@ public class SuperAdminCodeService {
 
     public record CodeRow(UUID id, String code, int durationMonths, String status, UUID batchId, String batchLabel,
             Instant createdAt, Instant redeemedAt, String redeemedByEmail, String tenantSlug, String tenantName,
-            Instant tenantCreatedAt, Instant planExpiresAt, String planStatus) {}
+            Instant tenantCreatedAt, Instant planExpiresAt, String planStatus, String planCode) {}
 
     public record CodePage(List<CodeRow> content, int page, int size, long totalElements, int totalPages) {}
 
     public record BatchRow(UUID id, String label, int durationMonths, int quantity, String note, String createdBy,
-            Instant createdAt, long available, long redeemed, long disabled) {}
+            Instant createdAt, long available, long redeemed, long disabled, String planCode) {}
 
     public record CodeStats(long available, long redeemed, long disabled, long plansExpiringSoon, long plansExpired) {}
 
@@ -42,9 +42,11 @@ public class SuperAdminCodeService {
     }
 
     @Transactional
-    public PlanService.Batch createBatch(String label, int durationMonths, int quantity, String note, String actor, String ip) {
-        PlanService.Batch batch = plans.generateBatch(label, durationMonths, quantity, note, actor);
-        audit("CODE_BATCH_CREATED", batch.id(), batch.label() + " · " + quantity + " × " + durationMonths + " meses", actor, ip, null);
+    public PlanService.Batch createBatch(String label, int durationMonths, int quantity, String note, String planCode, String actor,
+            String ip) {
+        PlanService.Batch batch = plans.generateBatch(label, durationMonths, quantity, note, actor, planCode);
+        audit("CODE_BATCH_CREATED", batch.id(), batch.label() + " · " + quantity + " × " + durationMonths + " meses", actor, ip,
+                "plan " + batch.planCode());
         return batch;
     }
 
@@ -78,14 +80,14 @@ public class SuperAdminCodeService {
         pageArgs.add(safeSize);
         pageArgs.add(safePage * safeSize);
         List<CodeRow> rows = jdbc.query("SELECT c.id, c.code, c.duration_months, c.status, c.batch_id, b.label, c.created_at, "
-                + "c.redeemed_at, c.redeemed_by_email, t.slug, t.name, t.created_at AS tenant_created_at, t.plan_expires_at" + FROM + where
+                + "c.redeemed_at, c.redeemed_by_email, t.slug, t.name, t.created_at AS tenant_created_at, t.plan_expires_at, c.plan_code" + FROM + where
                 + " ORDER BY (c.status = 'REDEEMED') DESC, c.redeemed_at DESC NULLS LAST, c.created_at DESC, c.code LIMIT ? OFFSET ?",
                 (rs, i) -> new CodeRow(rs.getObject("id", UUID.class), rs.getString("code"), rs.getInt("duration_months"),
                         rs.getString("status"), rs.getObject("batch_id", UUID.class), rs.getString("label"),
                         rs.getTimestamp("created_at").toInstant(), instant(rs.getTimestamp("redeemed_at")),
                         rs.getString("redeemed_by_email"), rs.getString("slug"), rs.getString("name"),
                         instant(rs.getTimestamp("tenant_created_at")), instant(rs.getTimestamp("plan_expires_at")),
-                        planStatus(rs.getTimestamp("plan_expires_at"), rs.getString("slug"))),
+                        planStatus(rs.getTimestamp("plan_expires_at"), rs.getString("slug")), rs.getString("plan_code")),
                 pageArgs.toArray());
         long totalElements = total == null ? 0 : total;
         return new CodePage(rows, safePage, safeSize, totalElements, (int) Math.ceil(totalElements / (double) safeSize));
@@ -93,7 +95,7 @@ public class SuperAdminCodeService {
 
     @Transactional(readOnly = true)
     public List<BatchRow> batches() {
-        return jdbc.query("SELECT b.id, b.label, b.duration_months, b.quantity, b.note, b.created_by, b.created_at, "
+        return jdbc.query("SELECT b.id, b.label, b.duration_months, b.quantity, b.note, b.created_by, b.created_at, b.plan_code, "
                 + "count(*) FILTER (WHERE c.status = 'AVAILABLE') AS available, "
                 + "count(*) FILTER (WHERE c.status = 'REDEEMED') AS redeemed, "
                 + "count(*) FILTER (WHERE c.status = 'DISABLED') AS disabled "
@@ -102,7 +104,7 @@ public class SuperAdminCodeService {
                 (rs, i) -> new BatchRow(rs.getObject("id", UUID.class), rs.getString("label"), rs.getInt("duration_months"),
                         rs.getInt("quantity"), rs.getString("note"), rs.getString("created_by"),
                         rs.getTimestamp("created_at").toInstant(), rs.getLong("available"), rs.getLong("redeemed"),
-                        rs.getLong("disabled")));
+                        rs.getLong("disabled"), rs.getString("plan_code")));
     }
 
     @Transactional(readOnly = true)

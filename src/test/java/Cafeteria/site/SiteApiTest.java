@@ -248,9 +248,9 @@ class SiteApiTest extends IntegrationTestSupport {
         String cuatro = "[\"%1$s\",\"%1$s\",\"%1$s\",\"%1$s\"]".formatted(propia.getId());
         mvc.perform(write(put("/api/v1/admin/site/images"), ownerA, "{\"about\":" + cuatro + "}"))
                 .andExpect(status().isBadRequest());
-        String siete = "{\"mediaId\":\"%s\"}".formatted(propia.getId());
+        String foto = "{\"mediaId\":\"%s\"}".formatted(propia.getId());
         mvc.perform(write(put("/api/v1/admin/site/images"), ownerA,
-                        "{\"gallery\":[" + String.join(",", java.util.Collections.nCopies(7, siete)) + "]}"))
+                        "{\"gallery\":[" + String.join(",", java.util.Collections.nCopies(16, foto)) + "]}"))
                 .andExpect(status().isBadRequest());
         mvc.perform(write(put("/api/v1/admin/site/images"), editorA, "{\"hero\":\"%s\"}".formatted(propia.getId())))
                 .andExpect(status().isForbidden());

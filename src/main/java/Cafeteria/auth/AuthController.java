@@ -21,7 +21,8 @@ public class AuthController {
 
     public record TenantSummary(UUID id, String slug, String name, boolean published, String logoUrl) {}
 
-    public record PlanSummary(java.time.Instant expiresAt, String status, Integer months, boolean qrCustomization) {}
+    public record PlanSummary(java.time.Instant expiresAt, String status, Integer months, boolean qrCustomization,
+            String planCode, Cafeteria.plan.Entitlements.Limits limits, Cafeteria.plan.Entitlements.Usage usage) {}
 
     public record QrSummary(String dotType, String cornerType, String dotColor, String backgroundMode,
             String backgroundColor, boolean useLogo) {}
@@ -32,8 +33,11 @@ public class AuthController {
     private final UserRepository users;
     private final TenantRepository tenants;
     private final SiteService site;
+    private final Cafeteria.plan.Entitlements entitlements;
 
-    public AuthController(TenantContext tenantContext, UserRepository users, TenantRepository tenants, SiteService site) {
+    public AuthController(TenantContext tenantContext, UserRepository users, TenantRepository tenants, SiteService site,
+            Cafeteria.plan.Entitlements entitlements) {
+        this.entitlements = entitlements;
         this.tenantContext = tenantContext;
         this.users = users;
         this.tenants = tenants;
@@ -62,8 +66,9 @@ public class AuthController {
                 t.getQrBackgroundColor(), t.isQrUseLogo());
     }
 
-    private static PlanSummary planSummary(Tenant tenant) {
+    private PlanSummary planSummary(Tenant tenant) {
         Cafeteria.plan.PlanService.Plan plan = Cafeteria.plan.PlanService.planOf(tenant);
-        return new PlanSummary(plan.expiresAt(), plan.status().name(), plan.months(), plan.qrCustomization());
+        return new PlanSummary(plan.expiresAt(), plan.status().name(), plan.months(), plan.qrCustomization(), plan.planCode(),
+                entitlements.limitsOf(tenant), entitlements.usageOf(tenant));
     }
 }

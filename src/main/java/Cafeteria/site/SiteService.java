@@ -21,6 +21,7 @@ import Cafeteria.catalog.MenuItemRepository;
 import Cafeteria.media.MediaAsset;
 import Cafeteria.media.MediaAssetRepository;
 import Cafeteria.media.MediaService;
+import Cafeteria.plan.Entitlements;
 import Cafeteria.shared.ApiException;
 import Cafeteria.site.SiteDtos.DashboardResponse;
 import Cafeteria.site.SiteDtos.GalleryImageRequest;
@@ -46,10 +47,12 @@ public class SiteService {
     private final MediaAssetRepository assets;
     private final CategoryRepository categories;
     private final MenuItemRepository items;
+    private final Entitlements entitlements;
 
     public SiteService(TenantRepository tenants, SiteImageRepository siteImages, SiteStatRepository siteStats,
             SiteSpaceRepository siteSpaces, MediaService media, MediaAssetRepository assets,
-            CategoryRepository categories, MenuItemRepository items) {
+            CategoryRepository categories, MenuItemRepository items, Entitlements entitlements) {
+        this.entitlements = entitlements;
         this.tenants = tenants;
         this.siteImages = siteImages;
         this.siteStats = siteStats;
@@ -88,6 +91,7 @@ public class SiteService {
         tenant.setCurrency(request.currency());
         tenant.setLocale(request.locale());
         tenant.setTimezone(request.timezone());
+        requireBrandAllowed(tenant, request);
         tenant.setPrimaryColor(request.primaryColor());
         tenant.setAccentColor(request.accentColor());
         tenant.setHeroTitle(blankToNull(request.heroTitle()));
@@ -186,6 +190,10 @@ public class SiteService {
         Tenant tenant = find(tenantId);
         List<UUID> about = request.about() == null ? List.of() : request.about();
         List<GalleryImageRequest> gallery = request.gallery() == null ? List.of() : request.gallery();
+        int maxGallery = entitlements.limitsOf(tenant).maxGallery();
+        if (gallery.size() > maxGallery) {
+            throw Entitlements.limitReached("fotos en la galería", maxGallery);
+        }
 
         Set<UUID> requested = new HashSet<>(about);
         gallery.forEach(g -> requested.add(g.mediaId()));
@@ -296,6 +304,27 @@ public class SiteService {
 
     private Tenant find(UUID tenantId) {
         return tenants.findById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+    }
+
+    private void requireBrandAllowed(Tenant tenant, SiteSettingsRequest r) {
+        if (entitlements.limitsOf(tenant).fullBranding()) {
+            return;
+        }
+        boolean changed = differs(tenant.getBusinessTitleColor(), hexOrNull(r.businessTitleColor()))
+                || differs(tenant.getBackgroundColor(), hexOrNull(r.backgroundColor()))
+                || differs(tenant.getFooterColor(), hexOrNull(r.footerColor()))
+                || differs(tenant.getHeadingColor(), hexOrNull(r.headingColor()))
+                || differs(tenant.getParagraphColor(), hexOrNull(r.paragraphColor()))
+                || differs(tenant.getWhatsappColor(), hexOrNull(r.whatsappColor()))
+                || differs(tenant.getMarqueeColor(), hexOrNull(r.marqueeColor()))
+                || differs(tenant.getFontFamily(), blankToNull(r.fontFamily()));
+        if (changed) {
+            throw Entitlements.featureUnavailable("La personalización completa de la marca");
+        }
+    }
+
+    private static boolean differs(String stored, String requested) {
+        return !java.util.Objects.equals(stored, requested);
     }
 
     private static String hexOrNull(String value) {

@@ -40,7 +40,7 @@ public class SecurityConfig {
 
     @Bean
     @Order(1)
-    SecurityFilterChain superAdminFilterChain(HttpSecurity http,
+    SecurityFilterChain superAdminFilterChain(HttpSecurity http, Cafeteria.superadmin.SuperAdminAccounts accounts,
             @Value("${security.superadmin.max-attempts:5}") int maxAttempts,
             @Value("${security.superadmin.window-minutes:15}") int windowMinutes,
             @Value("${security.trust-forwarded-for:false}") boolean trustForwardedFor) throws Exception {
@@ -66,6 +66,7 @@ public class SecurityConfig {
                                 exception instanceof CsrfException ? "csrf_invalid" : "forbidden",
                                 exception instanceof CsrfException ? "Token CSRF ausente o inválido"
                                         : "Operación no permitida")))
+                .addFilterBefore(new Cafeteria.superadmin.SuperAdminSessionGuard(accounts), AuthorizationFilter.class)
                 .addFilterBefore(new RateLimitFilter(loginPath, maxAttempts, Duration.ofMinutes(windowMinutes), clientKey,
                         Integer.MAX_VALUE), AuthorizationFilter.class)
                 .addFilterBefore(new RateLimitFilter(verifyPath, maxAttempts * 2, Duration.ofMinutes(windowMinutes), clientKey,

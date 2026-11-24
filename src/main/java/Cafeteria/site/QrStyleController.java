@@ -2,7 +2,6 @@ package Cafeteria.site;
 
 import java.util.UUID;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -52,10 +51,6 @@ public class QrStyleController {
     @PutMapping
     public QrStyleResponse update(@Valid @RequestBody QrStyleRequest request) {
         Tenant tenant = find(tenantContext.requireOwner().tenantId());
-        if (!PlanService.planOf(tenant).qrCustomization()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "plan_feature_unavailable",
-                    "Personalizar el QR está disponible desde el plan de 3 meses");
-        }
         tenant.setQrDotType(request.dotType());
         tenant.setQrCornerType(request.cornerType());
         tenant.setQrDotColor(request.dotColor().toUpperCase());

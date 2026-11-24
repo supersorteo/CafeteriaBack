@@ -142,7 +142,8 @@ public class SuperAdminService {
         List<UUID> userIds = jdbc.query("SELECT user_id FROM tenant_users WHERE tenant_id = ?",
                 (rs, i) -> rs.getObject(1, UUID.class), tenantId);
 
-        for (String table : List.of("site_images", "site_spaces", "site_stats", "site_highlights", "menu_items", "categories")) {
+        for (String table : List.of("site_images", "site_spaces", "site_stats", "site_highlights", "menu_item_ingredients",
+                "ingredients", "coupons", "menu_items", "categories")) {
             jdbc.update("DELETE FROM " + table + " WHERE tenant_id = ?", tenantId);
         }
         int files = media.deleteAllOfTenant(tenantId);

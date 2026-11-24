@@ -33,13 +33,20 @@ public final class CatalogDtos {
             Boolean active,
             Long version,
             UUID imageId,
-            Boolean removeImage) {}
+            Boolean removeImage,
+            @Size(max = 30) List<UUID> ingredientIds) {}
 
     public record MenuItemResponse(UUID id, UUID categoryId, String name, String description, BigDecimal price,
-            String tag, boolean active, int sortOrder, long version, UUID imageId, String imageUrl) {
+            String tag, boolean active, int sortOrder, long version, UUID imageId, String imageUrl,
+            List<IngredientService.IngredientRef> ingredients) {
         static MenuItemResponse of(MenuItem m, String imageUrl) {
             return new MenuItemResponse(m.getId(), m.getCategoryId(), m.getName(), m.getDescription(), m.getPrice(),
-                    m.getTag(), m.isActive(), m.getSortOrder(), m.getVersion(), m.getImageId(), imageUrl);
+                    m.getTag(), m.isActive(), m.getSortOrder(), m.getVersion(), m.getImageId(), imageUrl, List.of());
+        }
+
+        MenuItemResponse with(List<IngredientService.IngredientRef> ingredients) {
+            return new MenuItemResponse(id, categoryId, name, description, price, tag, active, sortOrder, version, imageId,
+                    imageUrl, ingredients == null ? List.of() : ingredients);
         }
     }
 

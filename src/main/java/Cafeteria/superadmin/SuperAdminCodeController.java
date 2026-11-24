@@ -33,7 +33,8 @@ import jakarta.validation.constraints.Size;
 public class SuperAdminCodeController {
 
     public record BatchRequest(@Size(max = 80) String label, @NotNull Integer durationMonths,
-            @NotNull @Min(1) @Max(500) Integer quantity, @Size(max = 300) String note) {}
+            @NotNull @Min(1) @Max(500) Integer quantity, @Size(max = 300) String note,
+            @Size(max = 20) String planCode) {}
 
     private final SuperAdminCodeService service;
     private final boolean trustForwardedFor;
@@ -47,8 +48,8 @@ public class SuperAdminCodeController {
     @PostMapping("/batches")
     @ResponseStatus(HttpStatus.CREATED)
     public PlanService.Batch createBatch(@Valid @RequestBody BatchRequest body, Authentication auth, HttpServletRequest request) {
-        return service.createBatch(body.label(), body.durationMonths(), body.quantity(), body.note(), auth.getName(),
-                ClientIp.resolve(request, trustForwardedFor));
+        return service.createBatch(body.label(), body.durationMonths(), body.quantity(), body.note(), body.planCode(),
+                auth.getName(), ClientIp.resolve(request, trustForwardedFor));
     }
 
     @GetMapping("/batches")

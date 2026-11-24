@@ -136,15 +136,13 @@ class SiteBrandingTest extends IntegrationTestSupport {
     }
 
     @Test
-    void elPlanDeUnMesNoPuedePersonalizarElQr() throws Exception {
+    void elPlanDeUnMesTambienPuedePersonalizarElQr() throws Exception {
         withPlan(1);
 
         mvc.perform(write(put("/api/v1/admin/qr"), owner, qr("rounded", "solid", false)))
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("plan_feature_unavailable"));
-        mvc.perform(get("/api/v1/admin/qr").cookie(owner))
-                .andExpect(jsonPath("$.customizable").value(false)).andExpect(jsonPath("$.dotType").doesNotExist());
-
-        assertThat(tenants.findById(tenant.getId()).orElseThrow().getQrDotType()).isNull();
+                .andExpect(status().isOk()).andExpect(jsonPath("$.dotType").value("rounded"))
+                .andExpect(jsonPath("$.customizable").value(true));
+        assertThat(tenants.findById(tenant.getId()).orElseThrow().getQrDotType()).isEqualTo("rounded");
     }
 
     @Test

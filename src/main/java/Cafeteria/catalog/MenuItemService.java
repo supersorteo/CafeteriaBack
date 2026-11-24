@@ -19,8 +19,10 @@ import Cafeteria.catalog.CatalogDtos.MenuItemRequest;
 import Cafeteria.catalog.CatalogDtos.MenuItemResponse;
 import Cafeteria.media.MediaAsset;
 import Cafeteria.media.MediaService;
+import Cafeteria.plan.Entitlements;
 import Cafeteria.shared.ApiException;
 import Cafeteria.shared.PageResponse;
+import Cafeteria.tenant.Tenant;
 import Cafeteria.tenant.TenantRepository;
 import jakarta.persistence.criteria.Predicate;
 
@@ -30,15 +32,18 @@ public class MenuItemService {
 
     static final int MAX_PAGE_SIZE = 100;
     static final int DEFAULT_PAGE_SIZE = 50;
-    static final int MAX_ITEMS_PER_TENANT = 500;
 
     private final MenuItemRepository items;
     private final CategoryRepository categories;
     private final TenantRepository tenants;
     private final MediaService media;
+    private final Entitlements entitlements;
+    private final IngredientService ingredients;
 
     public MenuItemService(MenuItemRepository items, CategoryRepository categories, TenantRepository tenants,
-            MediaService media) {
+            MediaService media, Entitlements entitlements, IngredientService ingredients) {
+        this.entitlements = entitlements;
+        this.ingredients = ingredients;
         this.items = items;
         this.categories = categories;
         this.tenants = tenants;
@@ -62,13 +67,17 @@ public class MenuItemService {
         PageRequest pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by("sortOrder", "id"));
         Page<MenuItem> result = items.findAll(spec, pageable);
         Map<UUID, String> urls = imageUrls(tenantId, result.getContent());
-        return PageResponse.of(result, item -> MenuItemResponse.of(item, urls.get(item.getImageId())));
+        Map<UUID, List<IngredientService.IngredientRef>> byItem = ingredients.forItems(tenantId,
+                result.getContent().stream().map(MenuItem::getId).toList());
+        return PageResponse.of(result, item -> MenuItemResponse.of(item, urls.get(item.getImageId()))
+                .with(byItem.get(item.getId())));
     }
 
     public MenuItemResponse create(UUID tenantId, MenuItemRequest request) {
-        lockTenant(tenantId);
-        if (items.countByTenantId(tenantId) >= MAX_ITEMS_PER_TENANT) {
-            throw ApiException.conflict("limit_reached", "Se alcanzó el máximo de productos del negocio");
+        Tenant tenant = lockTenant(tenantId);
+        int max = entitlements.limitsOf(tenant).maxMenuItems();
+        if (items.countByTenantId(tenantId) >= max) {
+            throw Entitlements.limitReached("platos en la carta", max);
         }
         requireOwnCategory(tenantId, request.categoryId());
         MenuItem item = new MenuItem(tenantId, request.categoryId(), request.name().strip(),
@@ -78,7 +87,11 @@ public class MenuItemService {
         if (request.imageId() != null) {
             item.setImageId(media.requireReady(tenantId, request.imageId(), "imageId").getId());
         }
-        return respond(tenantId, items.saveAndFlush(item));
+        MenuItem created = items.saveAndFlush(item);
+        if (request.ingredientIds() != null) {
+            ingredients.setForItem(tenantId, created.getId(), request.ingredientIds());
+        }
+        return respond(tenantId, created);
     }
 
     public MenuItemResponse update(UUID tenantId, UUID id, MenuItemRequest request) {
@@ -108,6 +121,9 @@ public class MenuItemService {
             item.setImageId(null);
         }
         MenuItem saved = items.saveAndFlush(item);
+        if (request.ingredientIds() != null) {
+            ingredients.setForItem(tenantId, saved.getId(), request.ingredientIds());
+        }
         if (previousImage != null && !Objects.equals(previousImage, saved.getImageId())) {
             media.deleteIfUnreferenced(tenantId, previousImage);
         }
@@ -134,11 +150,15 @@ public class MenuItemService {
         List<MenuItem> ordered = items.findAll((root, query, cb) -> cb.and(cb.equal(root.get("tenantId"), tenantId),
                 cb.equal(root.get("categoryId"), categoryId)), Sort.by("sortOrder", "id"));
         Map<UUID, String> urls = imageUrls(tenantId, ordered);
-        return ordered.stream().map(item -> MenuItemResponse.of(item, urls.get(item.getImageId()))).toList();
+        Map<UUID, List<IngredientService.IngredientRef>> byItem = ingredients.forItems(tenantId,
+                ordered.stream().map(MenuItem::getId).toList());
+        return ordered.stream().map(item -> MenuItemResponse.of(item, urls.get(item.getImageId()))
+                .with(byItem.get(item.getId()))).toList();
     }
 
     private MenuItemResponse respond(UUID tenantId, MenuItem item) {
-        return MenuItemResponse.of(item, imageUrls(tenantId, List.of(item)).get(item.getImageId()));
+        return MenuItemResponse.of(item, imageUrls(tenantId, List.of(item)).get(item.getImageId()))
+                .with(ingredients.forItems(tenantId, List.of(item.getId())).get(item.getId()));
     }
 
     private Map<UUID, String> imageUrls(UUID tenantId, Collection<MenuItem> source) {
@@ -157,8 +177,8 @@ public class MenuItemService {
         }
     }
 
-    private void lockTenant(UUID tenantId) {
-        tenants.lockById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+    private Tenant lockTenant(UUID tenantId) {
+        return tenants.lockById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
     }
 
     private static String blankToNull(String value) {

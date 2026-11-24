@@ -39,7 +39,7 @@ java -jar target/cafeteria-0.0.1-SNAPSHOT.jar
 
 ## Cuentas adicionales de superadmin (V8)
 
-La cuenta principal sigue definiéndose con `SUPERADMIN_EMAIL` y `SUPERADMIN_PASSWORD` y no cambia. Una segunda cuenta se crea **al arrancar** si están definidas estas variables (si la cuenta ya existe, no se toca, así la contraseña que cambie la persona se conserva):
+La cuenta principal sigue definiéndose con `SUPERADMIN_EMAIL` y `SUPERADMIN_PASSWORD` y no cambia. Una segunda cuenta se crea **al arrancar** si están definidas estas variables. **La configuración manda:** en cada arranque el rol, las regiones y el estado de la cuenta se sincronizan con las variables, pero **nunca se pisa una contraseña** que la persona ya haya cambiado.
 
 | Variable | Valor |
 |---|---|
@@ -47,5 +47,8 @@ La cuenta principal sigue definiéndose con `SUPERADMIN_EMAIL` y `SUPERADMIN_PAS
 | `SUPERADMIN_OPERATOR_PASSWORD` | Contraseña **temporal** (mínimo 8 caracteres). Debe cambiarla en el primer ingreso. |
 | `SUPERADMIN_OPERATOR_ROLE` | `OPERATOR` (por defecto, solo lectura de negocios y actividad) o `ADMIN` (todos los permisos). |
 | `SUPERADMIN_OPERATOR_REGIONS` | Regiones de cobro que atiende, por ejemplo `AR`. |
+| `SUPERADMIN_OPERATOR_ENABLED` | `false` **deshabilita la cuenta** (mantén el correo definido). Sus sesiones abiertas se cierran en la siguiente petición. |
 
-Tras el primer ingreso se pueden quitar `SUPERADMIN_OPERATOR_EMAIL` y `SUPERADMIN_OPERATOR_PASSWORD` de las variables: la cuenta queda guardada con la contraseña cifrada.
+**Revocar el acceso:** pon `SUPERADMIN_OPERATOR_ENABLED=false` con el correo definido, o cambia el rol. Si quitas todas las variables, la cuenta **queda como estaba** (así se puede retirar la contraseña temporal del entorno tras el primer ingreso); para revocarla en ese caso, usa la variable `ENABLED=false` o desactívala en la base de datos (`superadmin_accounts.enabled`).
+
+Al cambiar la contraseña desde el panel se rota la sesión y se cierran las demás sesiones de esa cuenta.

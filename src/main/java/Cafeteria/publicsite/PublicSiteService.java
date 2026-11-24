@@ -29,6 +29,7 @@ import Cafeteria.publicsite.PublicSiteDtos.Item;
 import Cafeteria.publicsite.PublicSiteDtos.PublicCategory;
 import Cafeteria.publicsite.PublicSiteDtos.PublicSite;
 import Cafeteria.publicsite.PublicSiteDtos.Theme;
+import Cafeteria.plan.Entitlements;
 import Cafeteria.shared.ApiException;
 import Cafeteria.site.SiteSpace;
 import Cafeteria.site.SiteSpaceRepository;
@@ -48,10 +49,17 @@ public class PublicSiteService {
     private final SiteStatRepository siteStats;
     private final SiteSpaceRepository siteSpaces;
     private final MediaService media;
+    private final Entitlements entitlements;
+    private final Cafeteria.catalog.IngredientService ingredients;
+    private final Cafeteria.coupon.CouponService coupons;
 
     public PublicSiteService(TenantRepository tenants, CategoryRepository categories, MenuItemRepository items,
             SiteImageRepository siteImages, SiteStatRepository siteStats, SiteSpaceRepository siteSpaces,
-            MediaService media) {
+            MediaService media, Entitlements entitlements, Cafeteria.catalog.IngredientService ingredients,
+            Cafeteria.coupon.CouponService coupons) {
+        this.entitlements = entitlements;
+        this.ingredients = ingredients;
+        this.coupons = coupons;
         this.tenants = tenants;
         this.categories = categories;
         this.items = items;
@@ -61,6 +69,24 @@ public class PublicSiteService {
         this.media = media;
     }
 
+    private static Theme theme(Tenant t, boolean fullBranding) {
+        if (!fullBranding) {
+            return new Theme(t.getPrimaryColor(), t.getAccentColor(), null, null, null, null, null, null, null, null);
+        }
+        return new Theme(t.getPrimaryColor(), t.getAccentColor(), t.getBusinessTitleColor(), t.getBackgroundColor(),
+                t.getFooterColor(), t.getHeadingColor(), t.getParagraphColor(), t.getWhatsappColor(), t.getMarqueeColor(),
+                t.getFontFamily());
+    }
+
+    private static List<MenuItem> withinPlan(List<MenuItem> rows, int max) {
+        if (rows.size() <= max) {
+            return rows;
+        }
+        java.util.Set<UUID> kept = rows.stream().sorted(java.util.Comparator.comparing(MenuItem::getCreatedAt)
+                .thenComparing(MenuItem::getId)).limit(max).map(MenuItem::getId).collect(java.util.stream.Collectors.toSet());
+        return rows.stream().filter(row -> kept.contains(row.getId())).toList();
+    }
+
     @Transactional(readOnly = true)
     public PublicSite get(String slug) {
         Tenant tenant = tenants.findBySlug(slug).filter(Tenant::isPublished).filter(t -> t.getSuspendedAt() == null)
@@ -68,7 +94,9 @@ public class PublicSiteService {
         UUID tenantId = tenant.getId();
 
         List<Category> categoryRows = categories.findByTenantIdOrderBySortOrderAscIdAsc(tenantId);
-        List<MenuItem> itemRows = items.findByTenantIdAndActiveTrueOrderBySortOrderAscIdAsc(tenantId);
+        Entitlements.Limits limits = entitlements.limitsOf(tenant);
+        List<MenuItem> itemRows = withinPlan(items.findByTenantIdAndActiveTrueOrderBySortOrderAscIdAsc(tenantId),
+                limits.maxMenuItems());
         List<SiteImage> imageRows = siteImages.findByTenantIdOrderBySlotAscPositionAsc(tenantId);
 
         List<SiteSpace> spaceRows = siteSpaces.findByTenantIdOrderByPositionAsc(tenantId);
@@ -81,10 +109,14 @@ public class PublicSiteService {
             urls.put(asset.getId(), asset.getPublicUrl());
         }
 
+        Map<UUID, List<Cafeteria.catalog.IngredientService.IngredientRef>> ingredientsByItem = ingredients.forItems(tenantId,
+                itemRows.stream().map(MenuItem::getId).toList());
         Map<UUID, List<Item>> itemsByCategory = new LinkedHashMap<>();
         for (MenuItem item : itemRows) {
+            List<String> names = ingredientsByItem.getOrDefault(item.getId(), List.of()).stream()
+                    .map(Cafeteria.catalog.IngredientService.IngredientRef::name).toList();
             itemsByCategory.computeIfAbsent(item.getCategoryId(), k -> new ArrayList<>()).add(new Item(item.getId(),
-                    item.getName(), item.getDescription(), item.getPrice(), item.getTag(), urls.get(item.getImageId())));
+                    item.getName(), item.getDescription(), item.getPrice(), item.getTag(), urls.get(item.getImageId()), names));
         }
         List<PublicCategory> publicCategories = categoryRows.stream()
                 .map(c -> new PublicCategory(c.getId(), c.getName(), itemsByCategory.getOrDefault(c.getId(), List.of())))
@@ -113,10 +145,7 @@ public class PublicSiteService {
 
         return new PublicSite(tenant.getSlug(), tenant.getName(), tenant.getDescriptor(), tenant.getTagline(),
                 tenant.getFooterText(), tenant.getCurrency(), tenant.getLocale(), tenant.getTimezone(),
-                new Theme(tenant.getPrimaryColor(), tenant.getAccentColor(), tenant.getBusinessTitleColor(),
-                        tenant.getBackgroundColor(), tenant.getFooterColor(), tenant.getHeadingColor(),
-                        tenant.getParagraphColor(), tenant.getWhatsappColor(), tenant.getMarqueeColor(),
-                        tenant.getFontFamily()),
+                theme(tenant, limits.fullBranding()),
                 new Contact(tenant.getWhatsappNumber(), tenant.getPhone(), tenant.getEmail(), tenant.getAddress(),
                         tenant.getSchedule()),
                 new Hero(tenant.getHeroTitle(), tenant.getHeroDescription(), tenant.getHeroCaption(), heroUrl),
@@ -128,6 +157,7 @@ public class PublicSiteService {
                 new Reservation(spaces.stream().filter(Space::bookable).map(Space::name).toList(),
                         List.copyOf(tenant.getPartySizes())),
                 publicCategories, logoUrl, spaces,
-                Cafeteria.plan.PlanService.planOf(tenant).status() == Cafeteria.plan.PlanService.Status.ACTIVE);
+                Cafeteria.plan.PlanService.planOf(tenant).status() == Cafeteria.plan.PlanService.Status.ACTIVE,
+                coupons.publicCoupons(tenant, limits));
     }
 }
