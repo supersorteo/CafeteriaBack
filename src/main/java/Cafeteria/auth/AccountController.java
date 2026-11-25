@@ -31,14 +31,16 @@ public class AccountController {
         this.registrationEnabled = registrationEnabled;
     }
 
+    public record RegisterResponse(String message, boolean verified) {}
+
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public MessageResponse register(@Valid @RequestBody RegisterRequest request) {
+    public RegisterResponse register(@Valid @RequestBody RegisterRequest request) {
         if (!registrationEnabled) {
             throw new ApiException(HttpStatus.FORBIDDEN, "registration_disabled", "El registro no está disponible");
         }
-        registration.register(request);
-        return new MessageResponse("Revisa tu correo para confirmar la cuenta");
+        boolean verified = registration.register(request);
+        return new RegisterResponse(verified ? "Cuenta creada" : "Revisa tu correo para confirmar la cuenta", verified);
     }
 
     @PostMapping("/verify-email")

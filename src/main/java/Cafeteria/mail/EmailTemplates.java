@@ -34,7 +34,8 @@ public class EmailTemplates {
             case ACTIVATION_CODE -> new EmailMessage(recipient, "Tu código de activación",
                     "Recibimos tu pago. Tu código de activación es:\n\n" + payload
                             + "\n\nCrea tu negocio aquí (el código ya viene escrito):\n"
-                            + baseUrl + "/auth/register?code=" + payload
+                            + baseUrl + "/auth/register?code=" + payload + "&email="
+                            + java.net.URLEncoder.encode(recipient, java.nio.charset.StandardCharsets.UTF_8)
                             + "\n\nEl plazo de tu plan empieza cuando lo uses. Si no esperabas este mensaje, ignóralo.");
             default -> throw new IllegalArgumentException("Tipo de correo desconocido: " + type);
         };

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,11 @@ public class PlanService {
         this.jdbc = jdbc;
         this.tenants = tenants;
         this.entitlements = entitlements;
+    }
+
+    public Optional<String> buyerEmailOfCode(String code) {
+        return jdbc.query("SELECT lower(o.buyer_email) FROM orders o JOIN activation_codes c ON c.id = o.activation_code_id "
+                + "WHERE c.code = ?", (rs, i) -> rs.getString(1), code == null ? "" : code.strip().toUpperCase()).stream().findFirst();
     }
 
     public static Plan planOf(Tenant tenant) {

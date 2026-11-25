@@ -110,6 +110,7 @@ class BillingOrdersTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.planName", is("Profesional")))
                 .andExpect(jsonPath("$.usdCents", is(1900)))
                 .andExpect(jsonPath("$.whatsappNumber", is("59899000002")))
+                .andExpect(jsonPath("$.emailHint", is("c***@ejemplo.test")))
                 .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString(reference)));
         assertThat(jdbc.queryForObject("SELECT buyer_email FROM orders WHERE reference = ?", String.class, reference))
                 .isEqualTo("cliente@ejemplo.test");
@@ -204,6 +205,53 @@ class BillingOrdersTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.content[0].activationCode").doesNotExist());
         mvc.perform(get("/api/v1/superadmin/orders").param("scope", "others").cookie(owner))
                 .andExpect(jsonPath("$.content[0].activationCode", startsWith("DLR-")));
+    }
+
+    private String register(String email, String slug, String code) throws Exception {
+        return mvc.perform(withXsrf(post("/api/v1/auth/register"), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"%s\",\"password\":\"Password-12345\",\"businessName\":\"Negocio\",\"slug\":\"%s\",\"activationCode\":\"%s\"}"
+                        .formatted(email, slug, code)))
+                .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
+    }
+
+    private String paidCode(String email) throws Exception {
+        String reference = reference(buy("PROFESIONAL", "UY", email));
+        Cookie owner = signIn(OWNER, OWNER_PASSWORD);
+        mvc.perform(withXsrf(post("/api/v1/superadmin/orders/" + orderId(reference) + "/confirm").cookie(owner), newXsrf()))
+                .andExpect(status().isOk());
+        return jdbc.queryForObject("SELECT payload FROM email_outbox WHERE type = 'ACTIVATION_CODE' AND recipient = ?", String.class, email);
+    }
+
+    @Test
+    void registrarseConElCorreoDelPedidoNoPideConfirmarElCorreoOtraVez() throws Exception {
+        String code = paidCode("cliente@ejemplo.test");
+
+        String body = register("Cliente@Ejemplo.test", "mi-negocio", code);
+
+        assertThat(body).contains("\"verified\":true");
+        assertThat(jdbc.queryForObject("SELECT email_verified_at IS NOT NULL FROM users WHERE email = 'cliente@ejemplo.test'", Boolean.class)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE type = 'VERIFY_EMAIL'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT plan_code FROM tenants WHERE slug = 'mi-negocio'", String.class)).isEqualTo("PROFESIONAL");
+    }
+
+    @Test
+    void conOtroCorreoSigueExigiendoConfirmarlo() throws Exception {
+        String code = paidCode("cliente@ejemplo.test");
+
+        String body = register("otro@ejemplo.test", "otro-negocio", code);
+
+        assertThat(body).contains("\"verified\":false");
+        assertThat(jdbc.queryForObject("SELECT email_verified_at IS NULL FROM users WHERE email = 'otro@ejemplo.test'", Boolean.class)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE type = 'VERIFY_EMAIL'", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void elCorreoDelCodigoTraeElEnlaceConElCodigoYElCorreoYaEscritos() throws Exception {
+        String code = paidCode("cliente+tienda@ejemplo.test");
+        Cafeteria.mail.EmailMessage message = new Cafeteria.mail.EmailTemplates("https://app.ejemplo.test")
+                .build(Cafeteria.mail.EmailTemplates.ACTIVATION_CODE, "cliente+tienda@ejemplo.test", code);
+
+        assertThat(message.body()).contains("https://app.ejemplo.test/auth/register?code=" + code + "&email=cliente%2Btienda%40ejemplo.test");
     }
 
     @Autowired

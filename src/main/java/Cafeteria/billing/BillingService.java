@@ -37,7 +37,7 @@ public class BillingService {
     public record NewOrder(String planCode, String region, String email, String name) {}
 
     public record OrderReceipt(String reference, String status, String planName, int months, int usdCents, String region,
-            String whatsappNumber, String message, Instant expiresAt) {}
+            String whatsappNumber, String message, Instant expiresAt, String emailHint) {}
 
     public record OrderRow(UUID id, String reference, String planCode, String planName, int months, String region,
             String buyerName, String buyerEmail, int usdCents, String status, String confirmedBy, Instant confirmedAt,
@@ -121,7 +121,7 @@ public class BillingService {
 
     @Transactional(readOnly = true)
     public OrderReceipt receipt(String reference) {
-        List<OrderReceipt> found = jdbc.query("SELECT o.reference, o.status, p.name, o.months, o.usd_cents, o.region, o.expires_at "
+        List<OrderReceipt> found = jdbc.query("SELECT o.reference, o.status, p.name, o.months, o.usd_cents, o.region, o.expires_at, o.buyer_email "
                 + "FROM orders o JOIN billing_plans p ON p.code = o.plan_code WHERE o.reference = ?",
                 (rs, i) -> {
                     String number = config.whatsappOf(rs.getString("region"));
@@ -130,7 +130,7 @@ public class BillingService {
                             + " por " + rs.getInt("months") + " mes). Mi pedido es " + rs.getString("reference") + ".";
                     return new OrderReceipt(rs.getString("reference"), rs.getString("status"), rs.getString("name"),
                             rs.getInt("months"), cents, rs.getString("region"), number, message,
-                            rs.getTimestamp("expires_at").toInstant());
+                            rs.getTimestamp("expires_at").toInstant(), maskEmail(rs.getString("buyer_email")));
                 }, reference == null ? "" : reference.strip().toUpperCase());
         if (found.isEmpty()) {
             throw ApiException.notFound("Pedido no encontrado");
@@ -245,6 +245,11 @@ public class BillingService {
             }
         }
         throw new IllegalStateException("No se pudo generar una referencia");
+    }
+
+    static String maskEmail(String email) {
+        int at = email == null ? -1 : email.indexOf('@');
+        return at < 1 ? "" : email.charAt(0) + "***" + email.substring(at);
     }
 
     private static String money(int cents) {

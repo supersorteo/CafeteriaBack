@@ -39,7 +39,7 @@ public class RegistrationService {
         this.plans = plans;
     }
 
-    public void register(RegisterRequest request) {
+    public boolean register(RegisterRequest request) {
         String email = AccountService.normalize(request.email());
         if (SlugRules.RESERVED.contains(request.slug())) {
             throw ApiException.badRequest("slug_reserved", "Ese identificador no está disponible");
@@ -51,18 +51,18 @@ public class RegistrationService {
         Optional<User> existing = users.findByEmail(email);
         if (existing.isPresent()) {
             tx.executeWithoutResult(status -> handleExisting(existing.get()));
-            return;
+            return false;
         }
         String passwordHash = encoder.encode(request.password());
         try {
-            tx.executeWithoutResult(status -> create(email, passwordHash, request));
+            return Boolean.TRUE.equals(tx.execute(status -> create(email, passwordHash, request)));
         } catch (DataIntegrityViolationException e) {
             String message = String.valueOf(e.getMostSpecificCause().getMessage());
             if (message.contains("tenants_slug_uk")) {
                 throw ApiException.conflict("slug_taken", "Ese identificador ya está en uso");
             }
             if (message.contains("users_email_uk")) {
-                return;
+                return false;
             }
             throw e;
         }
@@ -76,7 +76,7 @@ public class RegistrationService {
         }
     }
 
-    private void create(String email, String passwordHash, RegisterRequest request) {
+    private boolean create(String email, String passwordHash, RegisterRequest request) {
         User user = users.saveAndFlush(new User(email, passwordHash));
         Tenant tenant = new Tenant(request.slug(), request.businessName().strip());
         tenants.saveAndFlush(tenant);
@@ -86,6 +86,13 @@ public class RegistrationService {
         tenant.setPlanCode(redemption.planCode());
         tenants.saveAndFlush(tenant);
         memberships.saveAndFlush(new TenantUser(user.getId(), tenant.getId(), Role.OWNER));
+        boolean paidWithThisEmail = plans.buyerEmailOfCode(request.activationCode()).map(email::equals).orElse(false);
+        if (paidWithThisEmail) {
+            user.setEmailVerifiedAt(java.time.Instant.now());
+            users.saveAndFlush(user);
+            return true;
+        }
         accounts.issueVerification(user);
+        return false;
     }
 }
