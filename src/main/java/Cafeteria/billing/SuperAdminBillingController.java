@@ -46,7 +46,8 @@ public class SuperAdminBillingController {
     public BillingService.OrderPage orders(@RequestParam(required = false) String status,
             @RequestParam(required = false) String query, @RequestParam(required = false) String scope,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size, Authentication auth) {
-        return billing.list(scopes.viewer(auth, scope), status, query, page, size);
+        boolean admin = auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        return billing.list(scopes.viewer(auth, scope), admin, status, query, page, size);
     }
 
     @PostMapping("/orders/{id}/confirm")

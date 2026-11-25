@@ -117,15 +117,16 @@ class BillingOrdersTest extends IntegrationTestSupport {
     }
 
     @Test
-    void rechazaPlanesOPaisesInvalidosYLimitaLosPedidosPendientesPorCorreo() throws Exception {
+    void rechazaPlanesOPaisesInvalidosYReutilizaElPedidoPendienteDelMismoCorreoYPlan() throws Exception {
         assertThat(buy("INEXISTENTE", "AR", "a@ejemplo.test").getResponse().getStatus()).isEqualTo(400);
         assertThat(buy("PROFESIONAL", "BR", "a@ejemplo.test").getResponse().getStatus()).isEqualTo(400);
-        for (int i = 0; i < 3; i++) {
-            assertThat(buy("EMPRENDEDOR", "AR", "a@ejemplo.test").getResponse().getStatus()).isEqualTo(201);
-        }
-        MvcResult blocked = buy("EMPRENDEDOR", "AR", "a@ejemplo.test");
-        assertThat(blocked.getResponse().getStatus()).isEqualTo(429);
-        assertThat(blocked.getResponse().getContentAsString()).contains("too_many_orders");
+        String first = reference(buy("EMPRENDEDOR", "AR", "a@ejemplo.test"));
+        String again = reference(buy("EMPRENDEDOR", "AR", "A@ejemplo.test"));
+        assertThat(again).isEqualTo(first);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Integer.class)).isEqualTo(1);
+        String other = reference(buy("PROFESIONAL", "AR", "a@ejemplo.test"));
+        assertThat(other).isNotEqualTo(first);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Integer.class)).isEqualTo(2);
     }
 
     @Test
@@ -186,6 +187,23 @@ class BillingOrdersTest extends IntegrationTestSupport {
         mvc.perform(get("/api/v1/public/billing/orders/" + two)).andExpect(jsonPath("$.status", is("EXPIRED")));
         mvc.perform(withXsrf(post("/api/v1/superadmin/orders/" + orderId(two) + "/confirm").cookie(owner), newXsrf()))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void unOperadorDeSoloLecturaVeLosPedidosPeroNuncaElCodigoDeActivacion() throws Exception {
+        String reference = reference(buy("EMPRENDEDOR", "AR", "ar@ejemplo.test"));
+        Cookie owner = signIn(OWNER, OWNER_PASSWORD);
+        mvc.perform(withXsrf(post("/api/v1/superadmin/orders/" + orderId(reference) + "/confirm").cookie(owner), newXsrf()))
+                .andExpect(status().isOk());
+        accounts.create(DANILO, TEMP, SuperAdminAccounts.OPERATOR, "AR", false);
+        Cookie operator = signIn(DANILO, TEMP);
+
+        mvc.perform(get("/api/v1/superadmin/orders").cookie(operator))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].reference", is(reference)))
+                .andExpect(jsonPath("$.content[0].activationCode").doesNotExist());
+        mvc.perform(get("/api/v1/superadmin/orders").param("scope", "others").cookie(owner))
+                .andExpect(jsonPath("$.content[0].activationCode", startsWith("DLR-")));
     }
 
     @Autowired

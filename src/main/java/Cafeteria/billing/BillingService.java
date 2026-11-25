@@ -23,7 +23,6 @@ import Cafeteria.superadmin.SuperAdminScopes;
 public class BillingService {
 
     public static final String WHATSAPP = "WHATSAPP";
-    static final int MAX_PENDING_PER_EMAIL = 3;
     static final int WHATSAPP_ORDER_DAYS = 7;
     private static final String REFERENCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -42,7 +41,12 @@ public class BillingService {
 
     public record OrderRow(UUID id, String reference, String planCode, String planName, int months, String region,
             String buyerName, String buyerEmail, int usdCents, String status, String confirmedBy, Instant confirmedAt,
-            Instant createdAt, Instant expiresAt, String activationCode) {}
+            Instant createdAt, Instant expiresAt, String activationCode) {
+        OrderRow withoutCode() {
+            return new OrderRow(id, reference, planCode, planName, months, region, buyerName, buyerEmail, usdCents, status,
+                    confirmedBy, confirmedAt, createdAt, expiresAt, null);
+        }
+    }
 
     public record OrderPage(List<OrderRow> content, int page, int size, long totalElements, int totalPages) {}
 
@@ -100,11 +104,11 @@ public class BillingService {
         if (!zone.whatsapp()) {
             throw ApiException.conflict("method_unavailable", "Este método no está disponible en tu país por ahora");
         }
-        Integer pending = jdbc.queryForObject("SELECT count(*) FROM orders WHERE lower(buyer_email) = ? AND status = 'PENDING'",
-                Integer.class, email);
-        if (pending != null && pending >= MAX_PENDING_PER_EMAIL) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "too_many_orders",
-                    "Ya tienes pedidos pendientes. Espera a que los confirmemos.");
+        List<String> existing = jdbc.queryForList("SELECT reference FROM orders WHERE lower(buyer_email) = ? AND plan_code = ? "
+                + "AND region = ? AND status = 'PENDING' AND expires_at > now() ORDER BY created_at DESC LIMIT 1",
+                String.class, email, plan, region);
+        if (!existing.isEmpty()) {
+            return receipt(existing.get(0));
         }
         String reference = newReference();
         Instant expires = Instant.now().plus(WHATSAPP_ORDER_DAYS, ChronoUnit.DAYS);
@@ -135,7 +139,7 @@ public class BillingService {
     }
 
     @Transactional(readOnly = true)
-    public OrderPage list(SuperAdminScopes.Viewer viewer, String status, String query, int page, int size) {
+    public OrderPage list(SuperAdminScopes.Viewer viewer, boolean includeCodes, String status, String query, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 100);
         int safePage = Math.max(page, 0);
         StringBuilder where = new StringBuilder(" WHERE 1 = 1");
@@ -157,7 +161,8 @@ public class BillingService {
         pageArgs.add(safeSize);
         pageArgs.add(safePage * safeSize);
         List<OrderRow> rows = jdbc.query("SELECT " + ORDER_COLUMNS + ORDER_FROM + where
-                + " ORDER BY (o.status = 'PENDING') DESC, o.created_at DESC LIMIT ? OFFSET ?", this::row, pageArgs.toArray());
+                + " ORDER BY (o.status = 'PENDING') DESC, o.created_at DESC LIMIT ? OFFSET ?", this::row, pageArgs.toArray()).stream()
+                .map(row -> includeCodes ? row : row.withoutCode()).toList();
         long totalElements = total == null ? 0 : total;
         return new OrderPage(rows, safePage, safeSize, totalElements, (int) Math.ceil(totalElements / (double) safeSize));
     }
