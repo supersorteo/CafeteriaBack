@@ -23,6 +23,11 @@ Guía completa: `docs/deployment.md` en el repositorio del frontend (`Cafeteria`
 | `MAIL_SENDER` | no (por defecto `smtp`) | `smtp` (solo plan Pro de Railway) o `gmail-api` (cualquier plan) |
 | `DB_POOL_SIZE` | no | `10` |
 | `BILLING_WHATSAPP_AR` `BILLING_WHATSAPP_UY` | sí para vender | Número de WhatsApp que atiende los pedidos de cada país, solo dígitos con código de país (sin `+`). Argentina lo atiende quien tenga la región `AR`; Uruguay, el dueño. **No se versionan.** Sin número, ese país no permite comprar. |
+| `MP_ACCESS_TOKEN` `MP_PUBLIC_KEY` `MP_WEBHOOK_SECRET` | para cobrar con Mercado Pago (Argentina) | Credenciales de la aplicación de Mercado Pago. Con `MP_PUBLIC_KEY` el botón va embebido; sin ella, redirige a Mercado Pago. **Nunca se versionan.** |
+| `MP_NOTIFICATION_URL` | recomendado en producción | URL pública del webhook: `https://TU-BACKEND/api/v1/public/billing/webhooks/mercadopago`. En local hace falta un túnel; sin ella el pago se confirma al volver a la app y por reconciliación. |
+| `PAYPAL_CLIENT_ID` `PAYPAL_CLIENT_SECRET` `PAYPAL_BASE_URL` | para cobrar con PayPal | `PAYPAL_BASE_URL`: `https://api-m.sandbox.paypal.com` (pruebas) o `https://api-m.paypal.com` (real). |
+| `BILLING_USD_ARS_RATE` | para Mercado Pago | Cotización inicial USD→ARS con la que se calcula el precio en pesos. Después se edita desde el panel. |
+| `MP_ENABLED` `PAYPAL_ENABLED` | no (por defecto `true`) | `false` apaga el método aunque tenga credenciales. |
 | `DEMO_SITE_ENABLED` | no (por defecto `true`) | `false` para no crear el sitio demo `/la-terraza` |
 
 ## Comprobar en local el perfil de producción

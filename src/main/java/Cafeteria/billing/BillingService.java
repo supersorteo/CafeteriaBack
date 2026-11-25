@@ -30,13 +30,15 @@ public class BillingService {
 
     public record PlanOption(String code, String name, int months, int usdCents, int maxMenuItems, int maxActiveCoupons,
             int maxGallery, int maxTableQr, boolean fullBranding, boolean advancedCoupons, boolean tableQr,
-            boolean prioritySupport, boolean stats) {}
+            boolean prioritySupport, boolean stats, Integer arsPrice) {}
 
     public record MethodOption(String code, String name, boolean available) {}
 
     public record RegionOption(String code, String name, boolean whatsapp, String whatsappNumber, List<MethodOption> methods) {}
 
-    public record Options(List<PlanOption> plans, List<RegionOption> regions) {}
+    public record CheckoutConfig(String paypalClientId, String mercadopagoPublicKey) {}
+
+    public record Options(List<PlanOption> plans, List<RegionOption> regions, CheckoutConfig checkout) {}
 
     public record NewOrder(String planCode, String region, String email, String name, String method) {}
 
@@ -65,10 +67,14 @@ public class BillingService {
     private final EmailOutbox outbox;
     private final BillingProperties config;
     private final SuperAdminScopes scopes;
+    private final PaymentsProperties payments;
+    private final FxRates fx;
     private final SecureRandom random = new SecureRandom();
 
     public BillingService(JdbcTemplate jdbc, PlanService plans, EmailOutbox outbox, BillingProperties config,
-            SuperAdminScopes scopes) {
+            SuperAdminScopes scopes, PaymentsProperties payments, FxRates fx) {
+        this.payments = payments;
+        this.fx = fx;
         this.jdbc = jdbc;
         this.plans = plans;
         this.outbox = outbox;
@@ -78,6 +84,9 @@ public class BillingService {
 
     @Transactional(readOnly = true)
     public Options options() {
+        java.util.Optional<java.math.BigDecimal> rate = fx.usdToArs();
+        boolean mercadopago = payments.mercadopagoConfigured() && rate.isPresent();
+        boolean paypal = payments.paypalConfigured();
         List<PlanOption> planOptions = jdbc.query("SELECT p.code, p.name, pr.months, pr.usd_cents, p.max_menu_items, "
                 + "p.max_active_coupons, p.max_gallery, p.max_table_qr, p.full_branding, p.advanced_coupons, p.table_qr, "
                 + "p.priority_support, p.stats FROM billing_prices pr JOIN billing_plans p ON p.code = pr.plan_code "
@@ -86,19 +95,20 @@ public class BillingService {
                         rs.getInt("usd_cents"), rs.getInt("max_menu_items"), rs.getInt("max_active_coupons"),
                         rs.getInt("max_gallery"), rs.getInt("max_table_qr"), rs.getBoolean("full_branding"),
                         rs.getBoolean("advanced_coupons"), rs.getBoolean("table_qr"), rs.getBoolean("priority_support"),
-                        rs.getBoolean("stats")));
+                        rs.getBoolean("stats"), arsPrice(rate, rs.getInt("usd_cents"))));
         List<RegionOption> regionOptions = jdbc.query("SELECT code, name FROM billing_regions WHERE active ORDER BY sort_order",
                 (rs, i) -> {
                     String number = config.whatsappOf(rs.getString("code"));
                     String code = rs.getString("code");
                     List<MethodOption> methods = List.of(
                             new MethodOption(WHATSAPP, "WhatsApp", !number.isEmpty()),
-                            new MethodOption(MERCADOPAGO, "Mercado Pago", false),
-                            new MethodOption(PAYPAL, "PayPal", false)).stream()
+                            new MethodOption(MERCADOPAGO, "Mercado Pago", mercadopago),
+                            new MethodOption(PAYPAL, "PayPal", paypal)).stream()
                             .filter(method -> !MERCADOPAGO.equals(method.code()) || "AR".equals(code)).toList();
                     return new RegionOption(code, rs.getString("name"), !number.isEmpty(), number, methods);
                 });
-        return new Options(planOptions, regionOptions);
+        return new Options(planOptions, regionOptions,
+                new CheckoutConfig(paypal ? payments.paypalClientId() : "", mercadopago ? payments.mercadopagoPublicKey() : ""));
     }
 
     @Transactional
@@ -244,7 +254,7 @@ public class BillingService {
                 rs.getTimestamp("expires_at").toInstant(), rs.getString("activation_code"));
     }
 
-    private String newReference() {
+    String newReference() {
         for (int attempt = 0; attempt < 10; attempt++) {
             StringBuilder reference = new StringBuilder("PED-");
             for (int i = 0; i < 8; i++) {
@@ -261,6 +271,14 @@ public class BillingService {
     static String maskEmail(String email) {
         int at = email == null ? -1 : email.indexOf('@');
         return at < 1 ? "" : email.charAt(0) + "***" + email.substring(at);
+    }
+
+    private static Integer arsPrice(java.util.Optional<java.math.BigDecimal> rate, int usdCents) {
+        return rate.map(value -> FxRates.pesos(usdCents, value)).orElse(null);
+    }
+
+    static String moneyLabel(int cents) {
+        return money(cents);
     }
 
     private static String money(int cents) {

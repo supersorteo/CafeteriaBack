@@ -114,6 +114,7 @@ public abstract class IntegrationTestSupport {
                 + "full_branding = FALSE, advanced_coupons = FALSE, table_qr = FALSE, priority_support = FALSE WHERE code = 'EMPRENDEDOR'");
         jdbc.update("UPDATE billing_plans SET max_menu_items = 100, max_active_coupons = 35, max_gallery = 15, max_table_qr = 30, "
                 + "full_branding = TRUE, advanced_coupons = TRUE, table_qr = TRUE, priority_support = TRUE WHERE code = 'PROFESIONAL'");
+        jdbc.update("DELETE FROM fx_rates");
         jdbc.update("UPDATE billing_prices SET usd_cents = CASE plan_code WHEN 'EMPRENDEDOR' THEN 900 ELSE 1900 END");
     }
 

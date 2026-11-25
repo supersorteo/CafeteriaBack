@@ -10,6 +10,7 @@ public class EmailTemplates {
     public static final String RESET_PASSWORD = "RESET_PASSWORD";
     public static final String ACCOUNT_EXISTS = "ACCOUNT_EXISTS";
     public static final String ACTIVATION_CODE = "ACTIVATION_CODE";
+    public static final String PAYMENT_RECEIPT = "PAYMENT_RECEIPT";
 
     private final String baseUrl;
 
@@ -37,6 +38,14 @@ public class EmailTemplates {
                             + baseUrl + "/auth/register?code=" + payload + "&email="
                             + java.net.URLEncoder.encode(recipient, java.nio.charset.StandardCharsets.UTF_8)
                             + "\n\nEl plazo de tu plan empieza cuando lo uses. Si no esperabas este mensaje, ignóralo.");
+            case PAYMENT_RECEIPT -> {
+                String[] parts = payload.split("\\|", 4);
+                yield new EmailMessage(recipient, "Recibo de tu pago en Deliora",
+                        "Recibimos tu pago de " + parts[2] + " por el plan " + parts[1] + ". Gracias por confiar en Deliora.\n\n"
+                                + "Tu negocio ya está creado: " + baseUrl + "/" + parts[0] + "\n"
+                                + "Entra a tu panel con tu correo y la contraseña que elegiste: " + baseUrl + "/auth/login\n\n"
+                                + "Referencia de tu pago: " + parts[3]);
+            }
             default -> throw new IllegalArgumentException("Tipo de correo desconocido: " + type);
         };
     }

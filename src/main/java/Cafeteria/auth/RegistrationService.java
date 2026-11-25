@@ -77,22 +77,29 @@ public class RegistrationService {
     }
 
     private boolean create(String email, String passwordHash, RegisterRequest request) {
-        User user = users.saveAndFlush(new User(email, passwordHash));
-        Tenant tenant = new Tenant(request.slug(), request.businessName().strip());
+        boolean paidWithThisEmail = plans.buyerEmailOfCode(request.activationCode()).map(email::equals).orElse(false);
+        provision(email, passwordHash, request.businessName(), request.slug(), request.activationCode(), paidWithThisEmail);
+        return paidWithThisEmail;
+    }
+
+    public User provision(String email, String passwordHash, String businessName, String slug, String activationCode,
+            boolean emailVerified) {
+        User user = new User(email, passwordHash);
+        if (emailVerified) {
+            user.setEmailVerifiedAt(java.time.Instant.now());
+        }
+        user = users.saveAndFlush(user);
+        Tenant tenant = new Tenant(slug, businessName.strip());
         tenants.saveAndFlush(tenant);
-        Cafeteria.plan.PlanService.Redemption redemption = plans.redeemForRegistration(request.activationCode(), tenant.getId(), email);
+        Cafeteria.plan.PlanService.Redemption redemption = plans.redeemForRegistration(activationCode, tenant.getId(), email);
         tenant.setPlanExpiresAt(redemption.expiresAt());
         tenant.setPlanMonths(redemption.months());
         tenant.setPlanCode(redemption.planCode());
         tenants.saveAndFlush(tenant);
         memberships.saveAndFlush(new TenantUser(user.getId(), tenant.getId(), Role.OWNER));
-        boolean paidWithThisEmail = plans.buyerEmailOfCode(request.activationCode()).map(email::equals).orElse(false);
-        if (paidWithThisEmail) {
-            user.setEmailVerifiedAt(java.time.Instant.now());
-            users.saveAndFlush(user);
-            return true;
+        if (!emailVerified) {
+            accounts.issueVerification(user);
         }
-        accounts.issueVerification(user);
-        return false;
+        return user;
     }
 }

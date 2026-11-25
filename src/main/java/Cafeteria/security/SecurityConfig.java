@@ -28,7 +28,7 @@ public class SecurityConfig {
     static final String LOGIN_PATH = API + "/auth/login";
     static final String[] PUBLIC_POSTS = { API + "/auth/register", API + "/auth/verify-email",
             API + "/auth/resend-verification", API + "/auth/forgot-password", API + "/auth/reset-password",
-            API + "/public/billing/orders" };
+            API + "/public/billing/orders", API + "/public/billing/checkout" };
 
     private static int globalCeiling(int perClient, int factor) {
         return (int) Math.min(Integer.MAX_VALUE, (long) perClient * Math.max(1, factor));
@@ -87,7 +87,10 @@ public class SecurityConfig {
             @Value("${security.global-limit-factor:10}") int globalLimitFactor) throws Exception {
         Function<HttpServletRequest, String> clientKey = request -> ClientIp.resolve(request, trustForwardedFor);
         http
-                .csrf(csrf -> csrf.spa())
+                .csrf(csrf -> {
+                    csrf.spa();
+                    csrf.ignoringRequestMatchers(API + "/public/billing/webhooks/**");
+                })
                 .cors(cors -> cors.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(API + "/auth/csrf", API + "/public/**", "/media/**",
