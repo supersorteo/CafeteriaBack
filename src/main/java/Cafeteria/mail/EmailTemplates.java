@@ -11,6 +11,7 @@ public class EmailTemplates {
     public static final String ACCOUNT_EXISTS = "ACCOUNT_EXISTS";
     public static final String ACTIVATION_CODE = "ACTIVATION_CODE";
     public static final String PAYMENT_RECEIPT = "PAYMENT_RECEIPT";
+    public static final String EMAIL_CODE = "EMAIL_CODE";
 
     private final String baseUrl;
 
@@ -38,6 +39,9 @@ public class EmailTemplates {
                             + baseUrl + "/auth/register?code=" + payload + "&email="
                             + java.net.URLEncoder.encode(recipient, java.nio.charset.StandardCharsets.UTF_8)
                             + "\n\nEl plazo de tu plan empieza cuando lo uses. Si no esperabas este mensaje, ignóralo.");
+            case EMAIL_CODE -> new EmailMessage(recipient, "Tu código de verificación",
+                    "Tu código para continuar con tu compra en Deliora es:\n\n" + payload
+                            + "\n\nVale 15 minutos. Si no fuiste tú, ignora este mensaje.");
             case PAYMENT_RECEIPT -> {
                 String[] parts = payload.split("\\|", 4);
                 yield new EmailMessage(recipient, "Recibo de tu pago en Deliora",

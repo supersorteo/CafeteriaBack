@@ -53,14 +53,40 @@ class OnlinePaymentsTest extends IntegrationTestSupport {
         fx.record(new BigDecimal("1500"), "MANUAL", "test");
     }
 
-    private String body(String plan, String region, String method, String email, String slug) {
-        return "{\"planCode\":\"%s\",\"region\":\"%s\",\"method\":\"%s\",\"email\":\"%s\",\"businessName\":\"Café %s\",\"slug\":\"%s\",\"password\":\"Clave-Segura-123\"}"
-                .formatted(plan, region, method, email, slug, slug);
+    private String body(String plan, String region, String method, String email, String slug, String proof) {
+        return "{\"planCode\":\"%s\",\"region\":\"%s\",\"method\":\"%s\",\"email\":\"%s\",\"businessName\":\"Café %s\",\"slug\":\"%s\",\"password\":\"Clave-Segura-123\",\"emailProof\":\"%s\"}"
+                .formatted(plan, region, method, email, slug, slug, proof);
+    }
+
+    private MvcResult sendCode(String email) throws Exception {
+        return mvc.perform(withXsrf(post("/api/v1/public/billing/email/code"), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"%s\"}".formatted(email))).andReturn();
+    }
+
+    private MvcResult verifyCode(String email, String code) throws Exception {
+        return mvc.perform(withXsrf(post("/api/v1/public/billing/email/verify"), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"%s\",\"code\":\"%s\"}".formatted(email, code))).andReturn();
+    }
+
+    private String lastCode(String email) {
+        return jdbc.queryForObject("SELECT payload FROM email_outbox WHERE type = 'EMAIL_CODE' AND recipient = ? ORDER BY created_at DESC LIMIT 1",
+                String.class, email.toLowerCase());
+    }
+
+    private String proofFor(String email) throws Exception {
+        if (sendCode(email).getResponse().getStatus() != 204) {
+            return "sin-prueba";
+        }
+        return field(verifyCode(email, lastCode(email)), "proof");
     }
 
     private MvcResult checkout(String plan, String region, String method, String email, String slug) throws Exception {
+        return checkoutWith(plan, region, method, email, slug, proofFor(email));
+    }
+
+    private MvcResult checkoutWith(String plan, String region, String method, String email, String slug, String proof) throws Exception {
         return mvc.perform(withXsrf(post("/api/v1/public/billing/checkout"), newXsrf()).contentType(MediaType.APPLICATION_JSON)
-                .content(body(plan, region, method, email, slug))).andReturn();
+                .content(body(plan, region, method, email, slug, proof))).andReturn();
     }
 
     private static String field(MvcResult result, String name) throws Exception {
@@ -134,16 +160,16 @@ class OnlinePaymentsTest extends IntegrationTestSupport {
 
     @Test
     void rechazaDatosInvalidosCorreosYDireccionesYaUsadosYMetodosNoOnline() throws Exception {
-        assertThat(checkout("PROFESIONAL", "UY", "WHATSAPP", "a@ejemplo.test", "uno-ok").getResponse().getStatus()).isEqualTo(409);
-        assertThat(checkout("INEXISTENTE", "UY", "PAYPAL", "a@ejemplo.test", "dos-ok").getResponse().getStatus()).isEqualTo(400);
-        assertThat(checkout("PROFESIONAL", "UY", "MERCADOPAGO", "a@ejemplo.test", "tres-ok").getResponse().getStatus()).isEqualTo(409);
+        assertThat(checkout("PROFESIONAL", "UY", "WHATSAPP", "a1@ejemplo.test", "uno-ok").getResponse().getStatus()).isEqualTo(409);
+        assertThat(checkout("INEXISTENTE", "UY", "PAYPAL", "a2@ejemplo.test", "dos-ok").getResponse().getStatus()).isEqualTo(400);
+        assertThat(checkout("PROFESIONAL", "UY", "MERCADOPAGO", "a3@ejemplo.test", "tres-ok").getResponse().getStatus()).isEqualTo(409);
         assertThat(checkout("PROFESIONAL", "UY", "PAYPAL", "no-es-correo", "cuatro-ok").getResponse().getStatus()).isEqualTo(400);
-        assertThat(checkout("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "admin").getResponse().getStatus()).isEqualTo(400);
+        assertThat(checkout("PROFESIONAL", "UY", "PAYPAL", "a4@ejemplo.test", "admin").getResponse().getStatus()).isEqualTo(400);
         MvcResult short1 = mvc.perform(withXsrf(post("/api/v1/public/billing/checkout"), newXsrf()).contentType(MediaType.APPLICATION_JSON)
-                .content(body("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "cinco-ok").replace("Clave-Segura-123", "corta"))).andReturn();
+                .content(body("PROFESIONAL", "UY", "PAYPAL", "a9@ejemplo.test", "cinco-ok", proofFor("a9@ejemplo.test")).replace("Clave-Segura-123", "corta"))).andReturn();
         assertThat(short1.getResponse().getStatus()).isEqualTo(400);
 
-        assertThat(checkout("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "mi-bar").getResponse().getStatus()).isEqualTo(201);
+        assertThat(checkout("PROFESIONAL", "UY", "PAYPAL", "a5@ejemplo.test", "mi-bar").getResponse().getStatus()).isEqualTo(201);
         MvcResult sameSlug = checkout("PROFESIONAL", "UY", "PAYPAL", "otro@ejemplo.test", "mi-bar");
         assertThat(sameSlug.getResponse().getStatus()).isEqualTo(409);
         assertThat(sameSlug.getResponse().getContentAsString()).contains("slug_taken");
@@ -197,16 +223,57 @@ class OnlinePaymentsTest extends IntegrationTestSupport {
     }
 
     @Test
-    void siElCorreoDePayPalNoCoincideLaCuentaNaceSinVerificarPeroLaSesionAutomaticaFunciona() throws Exception {
+    void elCorreoQueInformaElProveedorNoVerificaNadaSoloElCodigoEnviadoAlCorreo() throws Exception {
         MvcResult created = checkout("PROFESIONAL", "UY", "PAYPAL", "formulario@ejemplo.test", "bar-dos");
         String reference = field(created, "reference");
         approvePayPal(created, reference, "19.00", "otra-persona@paypal.test");
 
         capture(reference);
 
-        assertThat(jdbc.queryForObject("SELECT email_verified_at IS NULL FROM users WHERE email = 'formulario@ejemplo.test'", Boolean.class)).isTrue();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE type = 'VERIFY_EMAIL' AND recipient = 'formulario@ejemplo.test'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT email_verified_at IS NOT NULL FROM users WHERE email = 'formulario@ejemplo.test'", Boolean.class)).isTrue();
         assertThat(session(reference, field(created, "claimToken")).getResponse().getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void elCheckoutExigeUnaPruebaDeCorreoValidaDeUnSoloUsoYDeEseMismoCorreo() throws Exception {
+        assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "sin-prueba", "inventada").getResponse().getStatus()).isEqualTo(400);
+
+        String proof = proofFor("a@ejemplo.test");
+        assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "b@ejemplo.test", "otra-prueba", proof).getResponse().getContentAsString())
+                .contains("email_not_verified");
+        assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "uso-uno", proof).getResponse().getStatus()).isEqualTo(201);
+        assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "uso-dos", proof).getResponse().getContentAsString())
+                .contains("email_not_verified");
+    }
+
+    @Test
+    void siLaDireccionYaEstaOcupadaLaPruebaDeCorreoNoSeGastaYSePuedeReintentar() throws Exception {
+        tenant("ocupada");
+        String proof = proofFor("c@ejemplo.test");
+
+        assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "c@ejemplo.test", "ocupada", proof).getResponse().getStatus()).isEqualTo(409);
+        assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "c@ejemplo.test", "libre-ya", proof).getResponse().getStatus()).isEqualTo(201);
+    }
+
+    @Test
+    void elCodigoDeCorreoSeLimitaPorIntentosPorEnviosYNoSeEnviaACorreosYaRegistrados() throws Exception {
+        assertThat(sendCode("d@ejemplo.test").getResponse().getStatus()).isEqualTo(204);
+        String code = lastCode("d@ejemplo.test");
+        assertThat(code).matches("\\d{6}");
+        String wrong = code.equals("000000") ? "111111" : "000000";
+        for (int i = 0; i < 5; i++) {
+            assertThat(verifyCode("d@ejemplo.test", wrong).getResponse().getStatus()).isEqualTo(400);
+        }
+        assertThat(verifyCode("d@ejemplo.test", code).getResponse().getStatus()).isEqualTo(400);
+
+        for (int i = 0; i < 4; i++) {
+            assertThat(sendCode("d@ejemplo.test").getResponse().getStatus()).isEqualTo(204);
+        }
+        assertThat(sendCode("d@ejemplo.test").getResponse().getStatus()).isEqualTo(429);
+
+        member("registrado@ejemplo.test", tenant("ya-registrado"), Cafeteria.tenant.Role.OWNER, true);
+        assertThat(sendCode("registrado@ejemplo.test").getResponse().getStatus()).isEqualTo(409);
+        assertThat(sendCode("no-es-correo").getResponse().getStatus()).isEqualTo(400);
     }
 
     @Test
@@ -265,7 +332,7 @@ class OnlinePaymentsTest extends IntegrationTestSupport {
 
         assertThat(paid.getResponse().getContentAsString()).contains("\"status\":\"PAID\"").contains("\"ready\":true");
         assertThat(jdbc.queryForObject("SELECT plan_code FROM tenants WHERE slug = 'bar-ar'", String.class)).isEqualTo("PROFESIONAL");
-        assertThat(jdbc.queryForObject("SELECT email_verified_at IS NULL FROM users WHERE email = 'arg@ejemplo.test'", Boolean.class)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT email_verified_at IS NOT NULL FROM users WHERE email = 'arg@ejemplo.test'", Boolean.class)).isTrue();
         assertThat(session(reference, field(created, "claimToken")).getResponse().getStatus()).isEqualTo(200);
     }
 

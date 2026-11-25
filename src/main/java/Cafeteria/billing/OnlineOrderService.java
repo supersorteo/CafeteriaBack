@@ -41,7 +41,7 @@ public class OnlineOrderService {
     private static final Duration CLAIM_WINDOW = Duration.ofMinutes(30);
 
     public record CheckoutRequest(String planCode, String region, String method, String email, String businessName,
-            String slug, String password) {}
+            String slug, String password, String emailProof) {}
 
     public record Checkout(String reference, String claimToken, String method, String providerRef, String initPoint,
             String amountLabel) {}
@@ -50,7 +50,7 @@ public class OnlineOrderService {
 
     record Order(UUID id, String reference, String planCode, String planName, int months, String region, String method,
             String email, int usdCents, String currency, int amountMinor, String status, String providerRef, String businessName,
-            String slug, String passwordHash, String claimHash, UUID tenantId, Instant paidAt, Instant claimUsedAt) {}
+            String slug, String passwordHash, String claimHash, UUID tenantId, Instant paidAt, Instant claimUsedAt, boolean emailVerified) {}
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
@@ -66,12 +66,14 @@ public class OnlineOrderService {
     private final PlanService plans;
     private final EmailOutbox outbox;
     private final SuperAdminProperties superAdmin;
+    private final EmailProofService proofs;
     private final SecureRandom random = new SecureRandom();
 
     public OnlineOrderService(JdbcTemplate jdbc, TransactionTemplate tx, PaymentsProperties config, BillingService billing,
             PayPalClient paypal, MercadoPagoClient mercadopago, FxRates fx, PasswordEncoder encoder, UserRepository users,
             TenantRepository tenants, RegistrationService registration, PlanService plans, EmailOutbox outbox,
-            SuperAdminProperties superAdmin) {
+            SuperAdminProperties superAdmin, EmailProofService proofs) {
+        this.proofs = proofs;
         this.jdbc = jdbc;
         this.tx = tx;
         this.config = config;
@@ -118,15 +120,19 @@ public class OnlineOrderService {
             rate = fx.usdToArs().orElseThrow(() -> ApiException.conflict("method_unavailable", "Este método de pago no está disponible por ahora"));
             amountMinor = FxRates.pesos(price.usdCents(), rate) * 100;
         }
+        if (!proofs.consume(email, request.emailProof())) {
+            throw ApiException.badRequest("email_not_verified", "Confirma tu correo con el código que te enviamos.");
+        }
         String reference = billing.newReference();
         String claim = token();
         Instant expires = Instant.now().plus(Duration.ofMinutes(config.checkoutMinutes()));
         try {
             jdbc.update("INSERT INTO orders (id, reference, plan_code, months, region, method, buyer_email, usd_cents, expires_at, currency, "
-                    + "amount_minor, fx_rate, business_name, slug, password_hash, claim_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    + "amount_minor, fx_rate, business_name, slug, password_hash, claim_hash, email_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)",
                     UUID.randomUUID(), reference, plan, price.months(), region, method, email, price.usdCents(), Timestamp.from(expires),
                     currency, amountMinor, rate, businessName, slug, encoder.encode(request.password()), sha256(claim));
         } catch (DuplicateKeyException e) {
+            proofs.release(email, request.emailProof());
             throw ApiException.conflict("slug_taken", "Ese identificador ya está en uso");
         }
 
@@ -144,6 +150,7 @@ public class OnlineOrderService {
         } catch (PaymentProviderException e) {
             log.error("No se pudo iniciar el cobro {} ({}): {}", reference, method, e.getMessage());
             jdbc.update("UPDATE orders SET status = 'FAILED', failure_reason = ? WHERE reference = ?", abbreviate(e.getMessage()), reference);
+            proofs.release(email, request.emailProof());
             throw new ApiException(HttpStatus.BAD_GATEWAY, "payment_provider_error",
                     "No pudimos iniciar el pago. Inténtalo de nuevo en unos minutos.");
         }
@@ -297,11 +304,9 @@ public class OnlineOrderService {
         if (!"PAID".equals(order.status()) || order.tenantId() != null || order.slug() == null) {
             return;
         }
-        String payer = jdbc.queryForObject("SELECT payer_email FROM orders WHERE id = ?", String.class, id);
-        boolean verified = payer != null && payer.equalsIgnoreCase(order.email());
         String actor = adminFor(order.region());
         PlanService.Batch batch = plans.generateBatch("Pago online " + order.reference(), order.months(), 1, "Pago online " + order.reference(), actor, order.planCode());
-        User user = registration.provision(order.email(), order.passwordHash(), order.businessName(), order.slug(), batch.codes().get(0), verified);
+        User user = registration.provision(order.email(), order.passwordHash(), order.businessName(), order.slug(), batch.codes().get(0), order.emailVerified());
         UUID tenantId = jdbc.queryForObject("SELECT tenant_id FROM tenant_users WHERE user_id = ?", UUID.class, user.getId());
         UUID codeId = jdbc.queryForObject("SELECT id FROM activation_codes WHERE code = ?", UUID.class, batch.codes().get(0));
         jdbc.update("UPDATE orders SET tenant_id = ?, activation_code_id = ?, confirmed_by = ?, confirmed_at = now(), password_hash = NULL WHERE id = ?",
@@ -328,7 +333,7 @@ public class OnlineOrderService {
 
     private static final String SELECT = "SELECT o.id, o.reference, o.plan_code, p.name AS plan_name, o.months, o.region, o.method, o.buyer_email, "
             + "o.usd_cents, o.currency, coalesce(o.amount_minor, o.usd_cents) AS amount_minor, o.status, o.provider_ref, o.business_name, o.slug, "
-            + "o.password_hash, o.claim_hash, o.tenant_id, o.paid_at, o.claim_used_at FROM orders o JOIN billing_plans p ON p.code = o.plan_code";
+            + "o.password_hash, o.claim_hash, o.tenant_id, o.paid_at, o.claim_used_at, o.email_verified FROM orders o JOIN billing_plans p ON p.code = o.plan_code";
 
     private Order find(String reference) {
         return jdbc.query(SELECT + " WHERE o.reference = ?", this::row, reference == null ? "" : reference.strip().toUpperCase()).stream()
@@ -342,7 +347,8 @@ public class OnlineOrderService {
                 rs.getInt("months"), rs.getString("region"), rs.getString("method"), rs.getString("buyer_email"), rs.getInt("usd_cents"),
                 rs.getString("currency"), rs.getInt("amount_minor"), rs.getString("status"), rs.getString("provider_ref"),
                 rs.getString("business_name"), rs.getString("slug"), rs.getString("password_hash"), rs.getString("claim_hash"),
-                rs.getObject("tenant_id", UUID.class), paid == null ? null : paid.toInstant(), claimUsed == null ? null : claimUsed.toInstant());
+                rs.getObject("tenant_id", UUID.class), paid == null ? null : paid.toInstant(), claimUsed == null ? null : claimUsed.toInstant(),
+                rs.getBoolean("email_verified"));
     }
 
     private static void requireMethod(Order order, String method) {

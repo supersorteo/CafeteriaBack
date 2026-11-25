@@ -27,7 +27,13 @@ public class OnlineBillingController {
     public record CheckoutBody(@NotBlank @Size(max = 20) String planCode, @NotBlank @Size(max = 2) String region,
             @NotBlank @Size(max = 20) String method, @NotBlank @Email @Size(max = 254) String email,
             @NotBlank @Size(max = 120) String businessName, @NotBlank @Size(max = 63) String slug,
-            @NotBlank @Size(max = 100) String password) {}
+            @NotBlank @Size(max = 100) String password, @NotBlank @Size(max = 80) String emailProof) {}
+
+    public record EmailBody(@NotBlank @Email @Size(max = 254) String email) {}
+
+    public record EmailCodeBody(@NotBlank @Email @Size(max = 254) String email, @NotBlank @Size(max = 12) String code) {}
+
+    public record ProofResponse(String proof) {}
 
     public record VerifyBody(@Size(max = 80) String paymentId) {}
 
@@ -37,8 +43,10 @@ public class OnlineBillingController {
 
     private final OnlineOrderService online;
     private final OnlineSessionLogin login;
+    private final EmailProofService proofs;
 
-    public OnlineBillingController(OnlineOrderService online, OnlineSessionLogin login) {
+    public OnlineBillingController(OnlineOrderService online, OnlineSessionLogin login, EmailProofService proofs) {
+        this.proofs = proofs;
         this.online = online;
         this.login = login;
     }
@@ -47,7 +55,18 @@ public class OnlineBillingController {
     @ResponseStatus(HttpStatus.CREATED)
     public OnlineOrderService.Checkout checkout(@Valid @RequestBody CheckoutBody body) {
         return online.createCheckout(new OnlineOrderService.CheckoutRequest(body.planCode(), body.region(), body.method(),
-                body.email(), body.businessName(), body.slug(), body.password()));
+                body.email(), body.businessName(), body.slug(), body.password(), body.emailProof()));
+    }
+
+    @PostMapping("/email/code")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void sendCode(@Valid @RequestBody EmailBody body) {
+        proofs.sendCode(body.email());
+    }
+
+    @PostMapping("/email/verify")
+    public ProofResponse verifyCode(@Valid @RequestBody EmailCodeBody body) {
+        return new ProofResponse(proofs.verify(body.email(), body.code()));
     }
 
     @GetMapping("/orders/{reference}/state")
