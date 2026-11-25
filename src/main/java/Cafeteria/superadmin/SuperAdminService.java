@@ -98,6 +98,7 @@ public class SuperAdminService {
     @Transactional
     public void suspend(UUID tenantId, String actor, String ip) {
         Tenant tenant = tenants.lockById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+        requireNotDemo(tenant);
         if (tenant.getSuspendedAt() != null) {
             return;
         }
@@ -123,6 +124,7 @@ public class SuperAdminService {
     @Transactional
     public void delete(UUID tenantId, String confirmSlug, String actor, String ip) {
         Tenant tenant = tenants.lockById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+        requireNotDemo(tenant);
         if (tenant.getSuspendedAt() == null) {
             throw ApiException.conflict("not_suspended", "Suspende el negocio antes de eliminarlo");
         }
@@ -135,10 +137,17 @@ public class SuperAdminService {
     @Transactional
     public void deleteWithBusiness(UUID tenantId, String confirmSlug, String actor, String ip, String origin) {
         Tenant tenant = tenants.lockById(tenantId).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+        requireNotDemo(tenant);
         if (confirmSlug == null || !tenant.getSlug().equals(confirmSlug.strip())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "slug_mismatch", "La dirección escrita no coincide");
         }
         purge(tenant, actor, ip, origin);
+    }
+
+    private static void requireNotDemo(Tenant tenant) {
+        if (Cafeteria.seed.DemoSiteSeeder.SLUG.equals(tenant.getSlug())) {
+            throw ApiException.conflict("demo_protected", "El negocio de demostración no se puede suspender ni eliminar");
+        }
     }
 
     private void purge(Tenant tenant, String actor, String ip, String origin) {

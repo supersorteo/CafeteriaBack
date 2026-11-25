@@ -18,6 +18,8 @@ import Cafeteria.tenant.Tenant;
 class DemoSiteSeederTest extends IntegrationTestSupport {
 
     @Autowired
+    Cafeteria.superadmin.SuperAdminService superAdmin;
+    @Autowired
     DemoSiteSeeder seeder;
 
     private long count(String table, Tenant tenant) {
@@ -48,7 +50,23 @@ class DemoSiteSeederTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.spaces[0].imageUrl").exists())
                 .andExpect(jsonPath("$.categories", hasSize(5)))
                 .andExpect(jsonPath("$.categories[0].items[0].imageUrl").exists())
-                .andExpect(jsonPath("$.reservation.areas", hasSize(4)));
+                .andExpect(jsonPath("$.reservation.areas", hasSize(4)))
+                .andExpect(jsonPath("$.coupons[?(@.code=='BIENVENIDA10')].featured").value(org.hamcrest.Matchers.contains(true)));
+        assertThat(count("coupons", demo)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM menu_item_ingredients WHERE tenant_id = ?", Long.class, demo.getId()))
+                .isGreaterThan(20);
+    }
+
+    @Test
+    void elDemoNoSePuedeSuspenderNiEliminarDesdeElSuperadmin() throws Exception {
+        seeder.run(null);
+        Tenant demo = tenants.findBySlug("la-terraza").orElseThrow();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> superAdmin.suspend(demo.getId(), "root@plataforma.test", "127.0.0.1"))
+                .hasMessageContaining("demostración");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> superAdmin.deleteWithBusiness(demo.getId(), "la-terraza", "root@plataforma.test", "127.0.0.1", null))
+                .hasMessageContaining("demostración");
+        assertThat(tenants.findBySlug("la-terraza")).isPresent();
     }
 
     @Test

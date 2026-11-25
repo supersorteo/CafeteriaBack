@@ -11,9 +11,11 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import Cafeteria.catalog.Category;
+import Cafeteria.catalog.IngredientService;
 import Cafeteria.catalog.CategoryRepository;
 import Cafeteria.catalog.MenuItem;
 import Cafeteria.catalog.MenuItemRepository;
@@ -45,10 +47,14 @@ public class DemoSiteBuilder {
     private final SiteImageRepository siteImages;
     private final SiteStatRepository siteStats;
     private final SiteSpaceRepository siteSpaces;
+    private final IngredientService ingredients;
+    private final JdbcTemplate jdbc;
 
     public DemoSiteBuilder(TenantRepository tenants, CategoryRepository categories, MenuItemRepository menuItems,
             MediaService media, MediaAssetRepository assets, SiteImageRepository siteImages,
-            SiteStatRepository siteStats, SiteSpaceRepository siteSpaces) {
+            SiteStatRepository siteStats, SiteSpaceRepository siteSpaces, IngredientService ingredients, JdbcTemplate jdbc) {
+        this.ingredients = ingredients;
+        this.jdbc = jdbc;
         this.tenants = tenants;
         this.categories = categories;
         this.menuItems = menuItems;
@@ -67,6 +73,61 @@ public class DemoSiteBuilder {
         fillDemoProfile(tenant);
         attachMenuImages(tenant, uploaded);
         attachSiteContent(tenant, uploaded);
+        seedIngredients(tenant);
+        seedCoupons(tenant);
+    }
+
+    private static final Map<String, List<String>> DEMO_INGREDIENTS = Map.of(
+            "Negroni de la Casa", List.of("Gin", "Vermut rojo", "Bitter artesanal"),
+            "Margarita de Mango & Tajín", List.of("Tequila reposado", "Mango", "Lima", "Tajín"),
+            "Old Fashioned Ahumado", List.of("Bourbon", "Bitters de cacao", "Humo de roble"),
+            "Espresso Martini", List.of("Vodka", "Licor de café", "Espresso"),
+            "Tacos de Arrachera (3 pzas)", List.of("Arrachera", "Tortilla de maíz", "Guacamole", "Cebolla curtida"),
+            "Burger La Terraza", List.of("Carne de res", "Queso cheddar", "Tocino", "Papas trufadas"),
+            "Risotto de Hongos", List.of("Arroz arborio", "Hongos", "Parmesano", "Aceite de trufa"),
+            "Volcán de Chocolate", List.of("Chocolate", "Helado de vainilla", "Frutos rojos"));
+
+    private void seedIngredients(Tenant tenant) {
+        Long existing = jdbc.queryForObject("SELECT count(*) FROM ingredients WHERE tenant_id = ?", Long.class, tenant.getId());
+        if (existing != null && existing > 0) {
+            return;
+        }
+        Map<String, UUID> byName = new HashMap<>();
+        Map<String, UUID> items = new HashMap<>();
+        jdbc.query("SELECT id, name FROM menu_items WHERE tenant_id = ?", rs -> {
+            items.put(rs.getString(2), rs.getObject(1, UUID.class));
+        }, tenant.getId());
+        for (Map.Entry<String, List<String>> entry : DEMO_INGREDIENTS.entrySet()) {
+            UUID itemId = items.get(entry.getKey());
+            if (itemId == null) {
+                continue;
+            }
+            List<UUID> ids = new ArrayList<>();
+            for (String name : entry.getValue()) {
+                ids.add(byName.computeIfAbsent(name, key -> ingredients.create(tenant.getId(), key).id()));
+            }
+            ingredients.setForItem(tenant.getId(), itemId, ids);
+        }
+    }
+
+    private void seedCoupons(Tenant tenant) {
+        Long existing = jdbc.queryForObject("SELECT count(*) FROM coupons WHERE tenant_id = ?", Long.class, tenant.getId());
+        if (existing != null && existing > 0) {
+            return;
+        }
+        coupon(tenant, "BIENVENIDA10", "DESCUENTO", "10% en tu primera visita", "Menciona este código al pedir la cuenta.",
+                null, null, null, null, true, 0);
+        coupon(tenant, "HAPPY2X1", "DESCUENTO", "Happy hour 2x1 en cocteles", "Cocteles de la casa, hasta agotar la carta de happy hour.",
+                "2345", "18:00", "21:00", null, false, 1);
+        coupon(tenant, "POSTRE", "REGALO", "Postre de cortesía", "Para mesas de 4 o más personas en cena de fin de semana.",
+                "67", null, null, 50, false, 2);
+    }
+
+    private void coupon(Tenant tenant, String code, String type, String title, String benefit, String weekdays, String from,
+            String to, Integer max, boolean featured, int order) {
+        jdbc.update("INSERT INTO coupons (id, tenant_id, code, type, title, benefit, weekdays, time_from, time_to, "
+                + "max_redemptions, featured, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?::time, ?::time, ?, ?, ?)",
+                UUID.randomUUID(), tenant.getId(), code, type, title, benefit, weekdays, from, to, max, featured, order);
     }
 
     public void importMenu(Tenant tenant, List<Section> sections) {
