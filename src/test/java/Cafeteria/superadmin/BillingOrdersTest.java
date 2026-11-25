@@ -96,7 +96,24 @@ class BillingOrdersTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.regions", hasSize(2)))
                 .andExpect(jsonPath("$.regions[0].code", is("AR")))
                 .andExpect(jsonPath("$.regions[0].whatsappNumber", is("5491100000001")))
-                .andExpect(jsonPath("$.regions[1].whatsappNumber", is("59899000002")));
+                .andExpect(jsonPath("$.regions[1].whatsappNumber", is("59899000002")))
+                .andExpect(jsonPath("$.regions[0].methods[?(@.code=='WHATSAPP')].available").value(org.hamcrest.Matchers.contains(true)))
+                .andExpect(jsonPath("$.regions[0].methods[?(@.code=='MERCADOPAGO')].available").value(org.hamcrest.Matchers.contains(false)))
+                .andExpect(jsonPath("$.regions[1].methods[?(@.code=='MERCADOPAGO')]").isEmpty())
+                .andExpect(jsonPath("$.regions[1].methods[?(@.code=='PAYPAL')].available").value(org.hamcrest.Matchers.contains(false)));
+    }
+
+    @Test
+    void unMetodoDeCobroOnlineQueTodaviaNoEstaActivoSeRechaza() throws Exception {
+        for (String method : new String[] { "MERCADOPAGO", "PAYPAL", "BITCOIN" }) {
+            MvcResult result = mvc.perform(withXsrf(post("/api/v1/public/billing/orders"), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"planCode\":\"EMPRENDEDOR\",\"region\":\"AR\",\"email\":\"a@ejemplo.test\",\"method\":\"%s\"}".formatted(method)))
+                    .andReturn();
+            assertThat(result.getResponse().getStatus()).isEqualTo(409);
+            assertThat(result.getResponse().getContentAsString()).contains("method_unavailable");
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Integer.class)).isZero();
+        assertThat(buy("EMPRENDEDOR", "AR", "a@ejemplo.test").getResponse().getStatus()).isEqualTo(201);
     }
 
     @Test

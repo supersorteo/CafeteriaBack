@@ -19,7 +19,7 @@ import jakarta.validation.constraints.Size;
 public class PublicBillingController {
 
     public record OrderRequest(@NotBlank @Size(max = 20) String planCode, @NotBlank @Size(max = 2) String region,
-            @NotBlank @Email @Size(max = 254) String email, @Size(max = 120) String name) {}
+            @NotBlank @Email @Size(max = 254) String email, @Size(max = 120) String name, @Size(max = 20) String method) {}
 
     private final BillingService billing;
 
@@ -35,7 +35,7 @@ public class PublicBillingController {
     @PostMapping("/orders")
     @ResponseStatus(HttpStatus.CREATED)
     public BillingService.OrderReceipt create(@Valid @RequestBody OrderRequest body) {
-        return billing.createOrder(new BillingService.NewOrder(body.planCode(), body.region(), body.email(), body.name()));
+        return billing.createOrder(new BillingService.NewOrder(body.planCode(), body.region(), body.email(), body.name(), body.method()));
     }
 
     @GetMapping("/orders/{reference}")

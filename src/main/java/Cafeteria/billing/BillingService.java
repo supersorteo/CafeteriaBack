@@ -23,6 +23,8 @@ import Cafeteria.superadmin.SuperAdminScopes;
 public class BillingService {
 
     public static final String WHATSAPP = "WHATSAPP";
+    public static final String MERCADOPAGO = "MERCADOPAGO";
+    public static final String PAYPAL = "PAYPAL";
     static final int WHATSAPP_ORDER_DAYS = 7;
     private static final String REFERENCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -30,11 +32,13 @@ public class BillingService {
             int maxGallery, int maxTableQr, boolean fullBranding, boolean advancedCoupons, boolean tableQr,
             boolean prioritySupport, boolean stats) {}
 
-    public record RegionOption(String code, String name, boolean whatsapp, String whatsappNumber) {}
+    public record MethodOption(String code, String name, boolean available) {}
+
+    public record RegionOption(String code, String name, boolean whatsapp, String whatsappNumber, List<MethodOption> methods) {}
 
     public record Options(List<PlanOption> plans, List<RegionOption> regions) {}
 
-    public record NewOrder(String planCode, String region, String email, String name) {}
+    public record NewOrder(String planCode, String region, String email, String name, String method) {}
 
     public record OrderReceipt(String reference, String status, String planName, int months, int usdCents, String region,
             String whatsappNumber, String message, Instant expiresAt, String emailHint) {}
@@ -86,7 +90,13 @@ public class BillingService {
         List<RegionOption> regionOptions = jdbc.query("SELECT code, name FROM billing_regions WHERE active ORDER BY sort_order",
                 (rs, i) -> {
                     String number = config.whatsappOf(rs.getString("code"));
-                    return new RegionOption(rs.getString("code"), rs.getString("name"), !number.isEmpty(), number);
+                    String code = rs.getString("code");
+                    List<MethodOption> methods = List.of(
+                            new MethodOption(WHATSAPP, "WhatsApp", !number.isEmpty()),
+                            new MethodOption(MERCADOPAGO, "Mercado Pago", false),
+                            new MethodOption(PAYPAL, "PayPal", false)).stream()
+                            .filter(method -> !MERCADOPAGO.equals(method.code()) || "AR".equals(code)).toList();
+                    return new RegionOption(code, rs.getString("name"), !number.isEmpty(), number, methods);
                 });
         return new Options(planOptions, regionOptions);
     }
@@ -101,7 +111,8 @@ public class BillingService {
                 .orElseThrow(() -> ApiException.invalidField("planCode", "Elige un plan disponible"));
         RegionOption zone = options.regions().stream().filter(r -> r.code().equals(region)).findFirst()
                 .orElseThrow(() -> ApiException.invalidField("region", "Elige tu país"));
-        if (!zone.whatsapp()) {
+        String method = request.method() == null || request.method().isBlank() ? WHATSAPP : request.method().strip().toUpperCase();
+        if (zone.methods().stream().noneMatch(option -> option.code().equals(method) && option.available())) {
             throw ApiException.conflict("method_unavailable", "Este método no está disponible en tu país por ahora");
         }
         List<String> existing = jdbc.queryForList("SELECT reference FROM orders WHERE lower(buyer_email) = ? AND plan_code = ? "
@@ -114,7 +125,7 @@ public class BillingService {
         Instant expires = Instant.now().plus(WHATSAPP_ORDER_DAYS, ChronoUnit.DAYS);
         String name = request.name() == null || request.name().isBlank() ? null : request.name().strip();
         jdbc.update("INSERT INTO orders (id, reference, plan_code, months, region, method, buyer_name, buyer_email, usd_cents, expires_at) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", UUID.randomUUID(), reference, plan, price.months(), region, WHATSAPP,
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", UUID.randomUUID(), reference, plan, price.months(), region, method,
                 name, email, price.usdCents(), Timestamp.from(expires));
         return receipt(reference);
     }
