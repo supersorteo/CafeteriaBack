@@ -305,7 +305,8 @@ public class OnlineOrderService {
             return;
         }
         String actor = adminFor(order.region());
-        PlanService.Batch batch = plans.generateBatch("Pago online " + order.reference(), order.months(), 1, "Pago online " + order.reference(), actor, order.planCode());
+        String provider = BillingService.PAYPAL.equals(order.method()) ? "PayPal" : "Mercado Pago";
+        PlanService.Batch batch = plans.generateBatch(provider + " · " + order.planName(), order.months(), 1, "Pago online " + order.reference(), actor, order.planCode());
         User user = registration.provision(order.email(), order.passwordHash(), order.businessName(), order.slug(), batch.codes().get(0), order.emailVerified());
         UUID tenantId = jdbc.queryForObject("SELECT tenant_id FROM tenant_users WHERE user_id = ?", UUID.class, user.getId());
         UUID codeId = jdbc.queryForObject("SELECT id FROM activation_codes WHERE code = ?", UUID.class, batch.codes().get(0));

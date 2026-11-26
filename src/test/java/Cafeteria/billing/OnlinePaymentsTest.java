@@ -197,7 +197,12 @@ class OnlinePaymentsTest extends IntegrationTestSupport {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE type = 'PAYMENT_RECEIPT' AND recipient = 'dueno@ejemplo.test'", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE type = 'VERIFY_EMAIL'", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT b.label FROM orders o JOIN activation_codes c ON c.id = o.activation_code_id JOIN code_batches b ON b.id = c.batch_id WHERE o.reference = ?",
-                String.class, reference)).contains(reference);
+                String.class, reference)).isEqualTo("PayPal · Profesional");
+        assertThat(jdbc.queryForObject("SELECT c.code FROM orders o JOIN activation_codes c ON c.id = o.activation_code_id WHERE o.reference = ?",
+                String.class, reference)).matches("DLR-[A-Z0-9]{4}-[A-Z0-9]{4}");
+        assertThat(jdbc.queryForObject("SELECT c.status FROM orders o JOIN activation_codes c ON c.id = o.activation_code_id WHERE o.reference = ?",
+                String.class, reference)).isEqualTo("REDEEMED");
+        assertThat(jdbc.queryForObject("SELECT payload FROM email_outbox WHERE type = 'PAYMENT_RECEIPT'", String.class)).startsWith("bar-pago|Profesional|US$ 19|");
 
         MvcResult logged = session(reference, field(created, "claimToken"));
         assertThat(logged.getResponse().getStatus()).isEqualTo(200);

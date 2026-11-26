@@ -47,8 +47,7 @@ public class EmailTemplates {
                 yield new EmailMessage(recipient, "Recibo de tu pago en Deliora",
                         "Recibimos tu pago de " + parts[2] + " por el plan " + parts[1] + ". Gracias por confiar en Deliora.\n\n"
                                 + "Tu negocio ya está creado: " + baseUrl + "/" + parts[0] + "\n"
-                                + "Entra a tu panel con tu correo y la contraseña que elegiste: " + baseUrl + "/auth/login\n\n"
-                                + "Referencia de tu pago: " + parts[3]);
+                                + "Entra a tu panel con tu correo y la contraseña que elegiste: " + baseUrl + "/auth/login");
             }
             default -> throw new IllegalArgumentException("Tipo de correo desconocido: " + type);
         };
