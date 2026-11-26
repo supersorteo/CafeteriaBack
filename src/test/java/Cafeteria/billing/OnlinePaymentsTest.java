@@ -240,15 +240,43 @@ class OnlinePaymentsTest extends IntegrationTestSupport {
     }
 
     @Test
-    void elCheckoutExigeUnaPruebaDeCorreoValidaDeUnSoloUsoYDeEseMismoCorreo() throws Exception {
+    void elCheckoutExigeUnaPruebaDeCorreoValidaYDeEseMismoCorreo() throws Exception {
         assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "sin-prueba", "inventada").getResponse().getStatus()).isEqualTo(400);
 
         String proof = proofFor("a@ejemplo.test");
         assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "b@ejemplo.test", "otra-prueba", proof).getResponse().getContentAsString())
                 .contains("email_not_verified");
         assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "uso-uno", proof).getResponse().getStatus()).isEqualTo(201);
-        assertThat(checkoutWith("PROFESIONAL", "UY", "PAYPAL", "a@ejemplo.test", "uso-dos", proof).getResponse().getContentAsString())
-                .contains("email_not_verified");
+    }
+
+    @Test
+    void reintentarElPagoReemplazaElPedidoPendienteDelMismoCompradorYLiberaSuDireccion() throws Exception {
+        String proof = proofFor("reintento@ejemplo.test");
+        String first = field(checkoutWith("PROFESIONAL", "AR", "PAYPAL", "reintento@ejemplo.test", "bar-reintento", proof), "reference");
+
+        MvcResult retry = checkoutWith("PROFESIONAL", "AR", "MERCADOPAGO", "reintento@ejemplo.test", "bar-reintento", proof);
+
+        assertThat(retry.getResponse().getStatus()).isEqualTo(201);
+        assertThat(jdbc.queryForObject("SELECT status FROM orders WHERE reference = ?", String.class, first)).isEqualTo("EXPIRED");
+        assertThat(jdbc.queryForObject("SELECT status FROM orders WHERE reference = ?", String.class, field(retry, "reference"))).isEqualTo("PENDING");
+        assertThat(checkout("PROFESIONAL", "AR", "PAYPAL", "otro-comprador@ejemplo.test", "bar-reintento").getResponse().getContentAsString()).contains("slug_taken");
+    }
+
+    @Test
+    void elCorreoDelCodigoLoMuestraEnElAsuntoYTraeUnEnlaceQueLoVerifica() {
+        Cafeteria.mail.EmailMessage message = new Cafeteria.mail.EmailTemplates("https://app.ejemplo.test/")
+                .build(Cafeteria.mail.EmailTemplates.EMAIL_CODE, "ana+bar@gmail.com", "123456");
+        assertThat(message.subject()).isEqualTo("Deliora: tu código es 123456");
+        assertThat(message.body()).contains("https://app.ejemplo.test/comprar/verificar?email=ana%2Bbar%40gmail.com&code=123456");
+    }
+
+    @Test
+    void laContrasenaNecesitaLetrasYNumerosYElCorreoUnFormatoReal() throws Exception {
+        MvcResult onlyLetters = mvc.perform(withXsrf(post("/api/v1/public/billing/checkout"), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(body("PROFESIONAL", "UY", "PAYPAL", "letras@ejemplo.test", "solo-letras", proofFor("letras@ejemplo.test")).replace("Clave-Segura-123", "SoloLetrasLargas"))).andReturn();
+        assertThat(onlyLetters.getResponse().getStatus()).isEqualTo(400);
+        assertThat(onlyLetters.getResponse().getContentAsString()).contains("password");
+        assertThat(checkout("PROFESIONAL", "UY", "PAYPAL", "ana@gmail", "sin-dominio").getResponse().getStatus()).isEqualTo(400);
     }
 
     @Test

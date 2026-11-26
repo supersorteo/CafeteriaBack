@@ -39,8 +39,11 @@ public class EmailTemplates {
                             + baseUrl + "/auth/register?code=" + payload + "&email="
                             + java.net.URLEncoder.encode(recipient, java.nio.charset.StandardCharsets.UTF_8)
                             + "\n\nEl plazo de tu plan empieza cuando lo uses. Si no esperabas este mensaje, ignóralo.");
-            case EMAIL_CODE -> new EmailMessage(recipient, "Tu código de verificación",
-                    "Tu código para continuar con tu compra en Deliora es:\n\n" + payload
+            case EMAIL_CODE -> new EmailMessage(recipient, "Deliora: tu código es " + payload,
+                    "Toca este enlace para verificar tu correo y seguir con tu compra:\n\n"
+                            + baseUrl + "/comprar/verificar?email=" + java.net.URLEncoder.encode(recipient, java.nio.charset.StandardCharsets.UTF_8)
+                            + "&code=" + payload
+                            + "\n\nO escribe este código en la página de compra:\n\n" + payload
                             + "\n\nVale 15 minutos. Si no fuiste tú, ignora este mensaje.");
             case PAYMENT_RECEIPT -> {
                 String[] parts = payload.split("\\|", 4);

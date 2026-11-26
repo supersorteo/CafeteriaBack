@@ -123,6 +123,8 @@ public class OnlineOrderService {
         if (!proofs.consume(email, request.emailProof())) {
             throw ApiException.badRequest("email_not_verified", "Confirma tu correo con el código que te enviamos.");
         }
+        jdbc.update("UPDATE orders SET status = 'EXPIRED', failure_reason = 'Reemplazado por un pedido nuevo del mismo comprador' "
+                + "WHERE status = 'PENDING' AND slug IS NOT NULL AND buyer_email = ?", email);
         String reference = billing.newReference();
         String claim = token();
         Instant expires = Instant.now().plus(Duration.ofMinutes(config.checkoutMinutes()));
@@ -359,7 +361,7 @@ public class OnlineOrderService {
     }
 
     private static void validate(String email, String slug, String businessName, String password) {
-        if (!email.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$") || email.length() > 254) {
+        if (!email.matches(EmailProofService.EMAIL_PATTERN) || email.length() > 254) {
             throw ApiException.invalidField("email", "Escribe un correo válido");
         }
         if (businessName.isEmpty() || businessName.length() > 120) {
@@ -371,8 +373,8 @@ public class OnlineOrderService {
         if (SlugRules.RESERVED.contains(slug)) {
             throw ApiException.badRequest("slug_reserved", "Ese identificador no está disponible");
         }
-        if (password == null || password.length() < 10 || password.length() > 72) {
-            throw ApiException.invalidField("password", "La contraseña debe tener entre 10 y 72 caracteres");
+        if (password == null || password.length() < 10 || password.length() > 72 || !password.matches(".*\\p{L}.*") || !password.matches(".*\\d.*")) {
+            throw ApiException.invalidField("password", "La contraseña debe tener entre 10 y 72 caracteres, con al menos una letra y un número");
         }
     }
 

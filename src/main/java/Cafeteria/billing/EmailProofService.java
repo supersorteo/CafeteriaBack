@@ -26,6 +26,7 @@ public class EmailProofService {
     static final Duration PROOF_TTL = Duration.ofMinutes(60);
     static final int MAX_ATTEMPTS = 5;
     static final int MAX_SENDS_PER_HOUR = 5;
+    static final String EMAIL_PATTERN = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z]{2,}$";
 
     private final JdbcTemplate jdbc;
     private final EmailOutbox outbox;
@@ -80,7 +81,7 @@ public class EmailProofService {
         if (proof == null || proof.isBlank()) {
             return false;
         }
-        return jdbc.update("UPDATE payment_email_checks SET used_at = now() WHERE email = ? AND proof_hash = ? AND used_at IS NULL "
+        return jdbc.update("UPDATE payment_email_checks SET used_at = now() WHERE email = ? AND proof_hash = ? "
                 + "AND proof_expires_at > now()", normalize(rawEmail), OnlineOrderService.sha256(proof)) == 1;
     }
 
@@ -91,7 +92,7 @@ public class EmailProofService {
 
     private static String normalize(String email) {
         String clean = email == null ? "" : email.strip().toLowerCase();
-        if (!clean.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$") || clean.length() > 254) {
+        if (!clean.matches(EMAIL_PATTERN) || clean.length() > 254) {
             throw ApiException.invalidField("email", "Escribe un correo válido");
         }
         return clean;
