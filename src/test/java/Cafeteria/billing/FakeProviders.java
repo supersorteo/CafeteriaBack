@@ -37,6 +37,9 @@ public final class FakeProviders {
         server.createContext("/v2/checkout/orders", this::paypal);
         server.createContext("/checkout/preferences", this::preference);
         server.createContext("/v1/payments", this::payment);
+        server.createContext("/v1/dolares", ex -> reply(ex, 200, "[{\"casa\":\"oficial\",\"compra\":1580,\"venta\":1630},"
+                + "{\"casa\":\"blue\",\"compra\":1690,\"venta\":1710},{\"casa\":\"bolsa\",\"compra\":1664,\"venta\":1688.7},"
+                + "{\"casa\":\"tarjeta\",\"compra\":2054,\"venta\":2119}]"));
         server.start();
     }
 

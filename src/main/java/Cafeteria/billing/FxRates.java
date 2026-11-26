@@ -17,6 +17,13 @@ public class FxRates {
         this.jdbc = jdbc;
     }
 
+    public record Rate(BigDecimal rate, java.time.Instant updatedAt, String updatedBy) {}
+
+    public Optional<Rate> latest() {
+        return jdbc.query("SELECT rate, created_at, created_by FROM fx_rates WHERE base = 'USD' AND quote = 'ARS' ORDER BY created_at DESC LIMIT 1",
+                (rs, i) -> new Rate(rs.getBigDecimal(1), rs.getTimestamp(2).toInstant(), rs.getString(3))).stream().findFirst();
+    }
+
     public Optional<BigDecimal> usdToArs() {
         return jdbc.query("SELECT rate FROM fx_rates WHERE base = 'USD' AND quote = 'ARS' ORDER BY created_at DESC LIMIT 1",
                 (rs, i) -> rs.getBigDecimal(1)).stream().findFirst();

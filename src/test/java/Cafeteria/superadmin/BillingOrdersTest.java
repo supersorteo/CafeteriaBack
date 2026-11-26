@@ -28,6 +28,11 @@ import jakarta.servlet.http.Cookie;
 @TestPropertySource(properties = { "billing.whatsapp.ar=+54 9 11 0000-0001", "billing.whatsapp.uy=+598 99 000 002" })
 class BillingOrdersTest extends IntegrationTestSupport {
 
+    @org.springframework.test.context.DynamicPropertySource
+    static void fxReference(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("billing.fx-reference-url", () -> Cafeteria.billing.FakeProviders.INSTANCE.url() + "/v1/dolares");
+    }
+
     static final String OWNER = "root@plataforma.test";
     static final String OWNER_PASSWORD = "Super-Clave-De-Prueba-1";
     static final String DANILO = "danilo@ejemplo.test";
@@ -269,6 +274,42 @@ class BillingOrdersTest extends IntegrationTestSupport {
                 .build(Cafeteria.mail.EmailTemplates.ACTIVATION_CODE, "cliente+tienda@ejemplo.test", code);
 
         assertThat(message.body()).contains("https://app.ejemplo.test/auth/register?code=" + code + "&email=cliente%2Btienda%40ejemplo.test");
+    }
+
+    @Test
+    void elDuenoEditaLaTasaYElPrecioEnPesosSeRecalculaSoloConLasCotizacionesDelDiaComoReferencia() throws Exception {
+        Cookie danilo = danilo();
+        Cookie owner = signIn(OWNER, OWNER_PASSWORD);
+
+        mvc.perform(get("/api/v1/superadmin/billing/rate").cookie(owner)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.rate").doesNotExist())
+                .andExpect(jsonPath("$.references", hasSize(3)))
+                .andExpect(jsonPath("$.references[0].name", is("Oficial")))
+                .andExpect(jsonPath("$.references[1].name", is("MEP")))
+                .andExpect(jsonPath("$.references[1].sell", is(1688.7)))
+                .andExpect(jsonPath("$.references[2].name", is("Blue")));
+
+        mvc.perform(withXsrf(put("/api/v1/superadmin/billing/rate").cookie(danilo), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"rate\":1700}")).andExpect(status().isForbidden());
+        mvc.perform(withXsrf(put("/api/v1/superadmin/billing/rate").cookie(owner), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"rate\":0}")).andExpect(status().isBadRequest());
+        mvc.perform(withXsrf(put("/api/v1/superadmin/billing/rate").cookie(owner), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"rate\":1700}")).andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/v1/superadmin/billing/rate").cookie(danilo))
+                .andExpect(jsonPath("$.rate", is(1700.0))).andExpect(jsonPath("$.updatedBy", is(OWNER)));
+        mvc.perform(get("/api/v1/public/billing/options"))
+                .andExpect(jsonPath("$.plans[0].arsPrice", is(15300)))
+                .andExpect(jsonPath("$.plans[1].arsPrice", is(32300)));
+
+        mvc.perform(withXsrf(put("/api/v1/superadmin/billing/prices").cookie(owner), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"planCode\":\"PROFESIONAL\",\"months\":1,\"usdCents\":2000}")).andExpect(status().isNoContent());
+        mvc.perform(withXsrf(put("/api/v1/superadmin/billing/rate").cookie(owner), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"rate\":1688.7}")).andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/public/billing/options"))
+                .andExpect(jsonPath("$.plans[1].usdCents", is(2000)))
+                .andExpect(jsonPath("$.plans[1].arsPrice", is(33770)));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'FX_RATE_CHANGED'", Integer.class)).isEqualTo(2);
     }
 
     @Autowired
