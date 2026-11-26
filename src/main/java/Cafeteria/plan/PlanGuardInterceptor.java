@@ -17,7 +17,7 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 public class PlanGuardInterceptor implements HandlerInterceptor {
 
-    static final String REDEEM_PATH = "/api/v1/admin/plan/redeem";
+    static final String PLAN_PATHS = "/api/v1/admin/plan/";
     private static final Set<String> WRITE_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
     private final TenantRepository tenants;
@@ -28,15 +28,15 @@ public class PlanGuardInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        if (!WRITE_METHODS.contains(request.getMethod()) || REDEEM_PATH.equals(request.getRequestURI())) {
+        if (!WRITE_METHODS.contains(request.getMethod()) || request.getRequestURI().startsWith(PLAN_PATHS)) {
             return true;
         }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof AppPrincipal principal) {
             tenants.findById(principal.getTenantId()).ifPresent(tenant -> {
-                if (PlanService.planOf(tenant).status() == PlanService.Status.EXPIRED) {
+                if (PlanService.planOf(tenant).status().locked()) {
                     throw new ApiException(HttpStatus.FORBIDDEN, "plan_expired",
-                            "Tu plan venció. Canjea un código nuevo para volver a hacer cambios.");
+                            "Tu plan venció. Renuévalo para volver a hacer cambios.");
                 }
             });
         }

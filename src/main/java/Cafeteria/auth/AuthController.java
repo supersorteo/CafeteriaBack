@@ -22,7 +22,7 @@ public class AuthController {
     public record TenantSummary(UUID id, String slug, String name, boolean published, String logoUrl) {}
 
     public record PlanSummary(java.time.Instant expiresAt, String status, Integer months, boolean qrCustomization,
-            String planCode, Cafeteria.plan.Entitlements.Limits limits, Cafeteria.plan.Entitlements.Usage usage) {}
+            String planCode, Cafeteria.plan.Entitlements.Limits limits, Cafeteria.plan.Entitlements.Usage usage, java.time.Instant graceEndsAt) {}
 
     public record QrSummary(String dotType, String cornerType, String dotColor, String backgroundMode,
             String backgroundColor, boolean useLogo) {}
@@ -69,6 +69,6 @@ public class AuthController {
     private PlanSummary planSummary(Tenant tenant) {
         Cafeteria.plan.PlanService.Plan plan = Cafeteria.plan.PlanService.planOf(tenant);
         return new PlanSummary(plan.expiresAt(), plan.status().name(), plan.months(), plan.qrCustomization(), plan.planCode(),
-                entitlements.limitsOf(tenant), entitlements.usageOf(tenant));
+                entitlements.limitsOf(tenant), entitlements.usageOf(tenant), plan.graceEndsAt());
     }
 }

@@ -72,6 +72,14 @@ public class SuperAdminService {
             where.append(" AND t.suspended_at IS NULL");
         } else if ("suspended".equals(status)) {
             where.append(" AND t.suspended_at IS NOT NULL");
+        } else if ("soon".equals(status)) {
+            where.append(" AND t.suspended_at IS NULL AND t.plan_expires_at > now() AND t.plan_expires_at <= now() + interval '7 days'");
+        } else if ("grace".equals(status)) {
+            where.append(" AND t.suspended_at IS NULL AND t.plan_expires_at <= now() AND t.plan_expires_at > now() - interval '3 days'");
+        } else if ("paused".equals(status)) {
+            where.append(" AND t.suspended_at IS NULL AND t.plan_expires_at <= now() - interval '3 days' AND t.plan_expires_at > now() - interval '90 days'");
+        } else if ("archived".equals(status)) {
+            where.append(" AND t.suspended_at IS NULL AND t.plan_expires_at <= now() - interval '90 days'");
         }
         Long total = jdbc.queryForObject("SELECT count(*)" + LIST_FROM + where, Long.class, args.toArray());
         List<Object> pageArgs = new ArrayList<>(args);
@@ -80,7 +88,9 @@ public class SuperAdminService {
         List<TenantRow> rows = jdbc.query("SELECT t.id, t.slug, t.name, t.published, t.suspended_at, u.email, "
                 + "u.email_verified_at IS NOT NULL AS verified, "
                 + "(SELECT count(*) FROM tenant_users e WHERE e.tenant_id = t.id AND e.role <> 'OWNER') AS editors, "
-                + "t.created_at, t.plan_expires_at" + LIST_FROM + where + " ORDER BY t.created_at DESC, t.id LIMIT ? OFFSET ?",
+                + "t.created_at, t.plan_expires_at, t.whatsapp_number" + LIST_FROM + where
+                + (status != null && List.of("soon", "grace", "paused", "archived").contains(status) ? " ORDER BY t.plan_expires_at, t.id" : " ORDER BY t.created_at DESC, t.id")
+                + " LIMIT ? OFFSET ?",
                 (rs, i) -> {
                     Timestamp suspended = rs.getTimestamp("suspended_at");
                     Timestamp planExpires = rs.getTimestamp("plan_expires_at");
@@ -89,7 +99,8 @@ public class SuperAdminService {
                             suspended == null ? null : suspended.toInstant(), rs.getString("email"),
                             rs.getBoolean("verified"), rs.getLong("editors"), rs.getTimestamp("created_at").toInstant(),
                             planExpires == null ? null : planExpires.toInstant(),
-                            planExpires != null && !planExpires.toInstant().isAfter(java.time.Instant.now()) ? "EXPIRED" : "ACTIVE");
+                            Cafeteria.plan.PlanService.stageOf(planExpires == null || Cafeteria.seed.DemoSiteSeeder.SLUG.equals(rs.getString("slug")) ? null : planExpires.toInstant()),
+                            rs.getString("whatsapp_number"));
                 }, pageArgs.toArray());
         long totalElements = total == null ? 0 : total;
         return new TenantPage(rows, safePage, safeSize, totalElements, (int) Math.ceil(totalElements / (double) safeSize));

@@ -451,4 +451,95 @@ class OnlinePaymentsTest extends IntegrationTestSupport {
 
     @Autowired
     Cafeteria.superadmin.SuperAdminAccounts accounts;
+
+    private Cafeteria.tenant.Tenant renewableOwner(String slug, Instant expires) {
+        Cafeteria.tenant.Tenant tenant = tenant(slug);
+        tenant.setPlanExpiresAt(expires);
+        tenant.setPlanCode("EMPRENDEDOR");
+        tenant.setPublished(true);
+        tenant = tenants.save(tenant);
+        member("owner@" + slug + ".test", tenant, Cafeteria.tenant.Role.OWNER, true);
+        member("editor@" + slug + ".test", tenant, Cafeteria.tenant.Role.EDITOR, true);
+        return tenant;
+    }
+
+    private MvcResult renew(Cookie session, String plan, String region, String method) throws Exception {
+        return mvc.perform(withXsrf(post("/api/v1/admin/plan/checkout").cookie(session), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"planCode\":\"%s\",\"region\":\"%s\",\"method\":\"%s\"}".formatted(plan, region, method))).andReturn();
+    }
+
+    @Test
+    void unNegocioPausadoSeRenuevaPagandoConPayPalYVuelveAFuncionarAlInstanteConElPlanElegido() throws Exception {
+        Cafeteria.tenant.Tenant tenant = renewableOwner("bar-pausado", Instant.now().minus(10, java.time.temporal.ChronoUnit.DAYS));
+        Cookie owner = login("owner@bar-pausado.test");
+        mvc.perform(get("/api/v1/public/sites/bar-pausado")).andExpect(status().isGone());
+
+        MvcResult created = renew(owner, "PROFESIONAL", "UY", "PAYPAL");
+        assertThat(created.getResponse().getStatus()).isEqualTo(201);
+        String reference = field(created, "reference");
+        assertThat(created.getResponse().getContentAsString()).contains("\"claimToken\":null");
+        assertThat(jdbc.queryForObject("SELECT tenant_id FROM orders WHERE reference = ?", java.util.UUID.class, reference)).isEqualTo(tenant.getId());
+        assertThat(jdbc.queryForObject("SELECT slug FROM orders WHERE reference = ?", String.class, reference)).isNull();
+
+        approvePayPal(created, reference, "19.00", "owner@bar-pausado.test");
+        MvcResult paid = capture(reference);
+
+        assertThat(paid.getResponse().getContentAsString()).contains("\"status\":\"PAID\"").contains("\"ready\":true").contains("\"renewal\":true");
+        Cafeteria.tenant.Tenant after = tenants.findById(tenant.getId()).orElseThrow();
+        assertThat(after.getPlanCode()).isEqualTo("PROFESIONAL");
+        assertThat(after.getPlanExpiresAt()).isBetween(Instant.now().plus(27, java.time.temporal.ChronoUnit.DAYS), Instant.now().plus(32, java.time.temporal.ChronoUnit.DAYS));
+        assertThat(tenantsWithSlug("bar-pausado")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE email = 'owner@bar-pausado.test'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT payload FROM email_outbox WHERE type = 'RENEWAL_RECEIPT' AND recipient = 'owner@bar-pausado.test'", String.class))
+                .startsWith("bar-pausado|Profesional|US$ 19|");
+        assertThat(jdbc.queryForObject("SELECT b.label FROM orders o JOIN activation_codes c ON c.id = o.activation_code_id JOIN code_batches b ON b.id = c.batch_id WHERE o.reference = ?",
+                String.class, reference)).isEqualTo("PayPal · Profesional");
+        mvc.perform(get("/api/v1/public/sites/bar-pausado")).andExpect(status().isOk());
+        mvc.perform(withXsrf(post("/api/v1/admin/categories").cookie(owner), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Ya edito\"}")).andExpect(status().isCreated());
+
+        capture(reference);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE type = 'RENEWAL_RECEIPT'", Integer.class)).isEqualTo(1);
+        assertThat(session(reference, "cualquiera").getResponse().getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    void renovarAntesDeVencerConMercadoPagoSumaElMesAlVencimientoActual() throws Exception {
+        Instant vence = Instant.now().plus(5, java.time.temporal.ChronoUnit.DAYS);
+        Cafeteria.tenant.Tenant tenant = renewableOwner("bar-al-dia", vence);
+        MvcResult created = renew(login("owner@bar-al-dia.test"), "EMPRENDEDOR", "AR", "MERCADOPAGO");
+        String reference = field(created, "reference");
+        assertThat(FAKE.preferenceBodies.get(FAKE.preferenceBodies.size() - 1)).contains(reference).contains("13500");
+
+        FAKE.mpPayments.put("8801", FakeProviders.mpPayment("8801", "approved", reference, "13500", "ARS", "owner@bar-al-dia.test"));
+        assertThat(verify(reference, "8801").getResponse().getContentAsString()).contains("\"ready\":true");
+
+        assertThat(tenants.findById(tenant.getId()).orElseThrow().getPlanExpiresAt())
+                .isBetween(vence.plus(27, java.time.temporal.ChronoUnit.DAYS), vence.plus(32, java.time.temporal.ChronoUnit.DAYS));
+    }
+
+    @Test
+    void soloElDuenoRenuevaYLaDemoNoSeRenueva() throws Exception {
+        renewableOwner("bar-equipo", Instant.now().plus(5, java.time.temporal.ChronoUnit.DAYS));
+        assertThat(renew(login("editor@bar-equipo.test"), "EMPRENDEDOR", "UY", "PAYPAL").getResponse().getStatus()).isEqualTo(403);
+        assertThat(renew(login("owner@bar-equipo.test"), "EMPRENDEDOR", "UY", "MERCADOPAGO").getResponse().getStatus()).isEqualTo(409);
+        assertThat(renew(login("owner@bar-equipo.test"), "EMPRENDEDOR", "UY", "WHATSAPP").getResponse().getStatus()).isEqualTo(409);
+
+        Cafeteria.tenant.Tenant demo = tenant("la-terraza");
+        member("owner@demo.test", demo, Cafeteria.tenant.Role.OWNER, true);
+        MvcResult rejected = renew(login("owner@demo.test"), "EMPRENDEDOR", "UY", "PAYPAL");
+        assertThat(rejected.getResponse().getContentAsString()).contains("plan_not_renewable");
+    }
+
+    @Test
+    void laReconciliacionTerminaUnaRenovacionPagadaQueNoSeCompleto() throws Exception {
+        Cafeteria.tenant.Tenant tenant = renewableOwner("bar-reco", Instant.now().minus(1, java.time.temporal.ChronoUnit.DAYS));
+        String reference = field(renew(login("owner@bar-reco.test"), "EMPRENDEDOR", "UY", "PAYPAL"), "reference");
+        jdbc.update("UPDATE orders SET status = 'PAID', paid_at = now() WHERE reference = ?", reference);
+
+        online.reconcile();
+
+        assertThat(jdbc.queryForObject("SELECT fulfilled_at IS NOT NULL FROM orders WHERE reference = ?", Boolean.class, reference)).isTrue();
+        assertThat(tenants.findById(tenant.getId()).orElseThrow().getPlanExpiresAt()).isAfter(Instant.now().plus(25, java.time.temporal.ChronoUnit.DAYS));
+    }
 }

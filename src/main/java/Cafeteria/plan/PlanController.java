@@ -26,12 +26,12 @@ public class PlanController {
     public record RedeemRequest(@NotBlank @Size(max = 40) String code) {}
 
     public record PlanResponse(Instant expiresAt, String status, Integer months, boolean qrCustomization, String planCode,
-            Entitlements.Limits limits, Entitlements.Usage usage) {}
+            Entitlements.Limits limits, Entitlements.Usage usage, Instant graceEndsAt) {}
 
     private PlanResponse respond(Tenant tenant) {
         PlanService.Plan plan = PlanService.planOf(tenant);
         return new PlanResponse(plan.expiresAt(), plan.status().name(), plan.months(), plan.qrCustomization(), plan.planCode(),
-                entitlements.limitsOf(tenant), entitlements.usageOf(tenant));
+                entitlements.limitsOf(tenant), entitlements.usageOf(tenant), plan.graceEndsAt());
     }
 
     private final TenantContext tenantContext;

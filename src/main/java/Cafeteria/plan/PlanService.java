@@ -1,5 +1,6 @@
 package Cafeteria.plan;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -20,11 +21,21 @@ import Cafeteria.tenant.TenantRepository;
 @Service
 public class PlanService {
 
-    public enum Status { ACTIVE, EXPIRED }
+    public enum Status {
+        ACTIVE, GRACE, EXPIRED, ARCHIVED;
+
+        public boolean locked() {
+            return this == EXPIRED || this == ARCHIVED;
+        }
+    }
+
+    public static final Duration WARNING = Duration.ofDays(7);
+    public static final Duration GRACE = Duration.ofDays(3);
+    public static final Duration ARCHIVE_AFTER = Duration.ofDays(90);
 
     public record Batch(UUID id, String label, int durationMonths, List<String> codes, String planCode) {}
 
-    public record Plan(Instant expiresAt, Status status, Integer months, boolean qrCustomization, String planCode) {}
+    public record Plan(Instant expiresAt, Status status, Integer months, boolean qrCustomization, String planCode, Instant graceEndsAt) {}
 
     public record Redemption(Instant expiresAt, int months, String planCode) {}
 
@@ -46,10 +57,28 @@ public class PlanService {
     public static Plan planOf(Tenant tenant) {
         boolean demo = DemoSiteSeeder.SLUG.equals(tenant.getSlug());
         Instant expires = demo ? null : tenant.getPlanExpiresAt();
-        boolean expired = expires != null && !expires.isAfter(Instant.now());
         Integer months = tenant.getPlanMonths();
         String planCode = tenant.getPlanCode() == null ? Entitlements.DEFAULT_PLAN : tenant.getPlanCode();
-        return new Plan(expires, expired ? Status.EXPIRED : Status.ACTIVE, months, true, planCode);
+        return new Plan(expires, statusAt(expires, Instant.now()), months, true, planCode, expires == null ? null : expires.plus(GRACE));
+    }
+
+    public static String stageOf(Instant expires) {
+        Instant now = Instant.now();
+        Status status = statusAt(expires, now);
+        if (status == Status.ACTIVE) {
+            return expires != null && expires.minus(WARNING).isBefore(now) ? "SOON" : "ACTIVE";
+        }
+        return status.name();
+    }
+
+    public static Status statusAt(Instant expires, Instant now) {
+        if (expires == null || expires.isAfter(now)) {
+            return Status.ACTIVE;
+        }
+        if (expires.plus(GRACE).isAfter(now)) {
+            return Status.GRACE;
+        }
+        return expires.plus(ARCHIVE_AFTER).isAfter(now) ? Status.EXPIRED : Status.ARCHIVED;
     }
 
     public static Instant plusMonths(Instant from, int months) {
@@ -137,7 +166,7 @@ public class PlanService {
                 + "WHERE code = ?", email, tenantId, code);
         Instant now = Instant.now();
         Instant current = tenant.getPlanExpiresAt();
-        Instant base = current != null && current.isAfter(now) ? current : now;
+        Instant base = current != null && current.plus(GRACE).isAfter(now) ? current : now;
         tenant.setPlanExpiresAt(plusMonths(base, months.get(0)));
         tenant.setPlanMonths(months.get(0));
         tenant.setPlanCode(newPlan);

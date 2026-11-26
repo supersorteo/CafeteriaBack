@@ -176,18 +176,23 @@ class ActivationCodesTest extends IntegrationTestSupport {
     }
 
     @Test
-    void conElPlanVencidoElNegocioEsDeSoloLecturaYElSitioNoAdmiteReservas() throws Exception {
-        Tenant vencido = ownerWithPlan("vencido", Instant.now().minus(1, ChronoUnit.DAYS));
-        vencido.setPublished(true);
-        vencido = tenants.save(vencido);
-        Tenant vigente = ownerWithPlan("vigente", Instant.now().plus(10, ChronoUnit.DAYS));
-        vigente.setPublished(true);
-        vigente = tenants.save(vigente);
+    void elPlanVencidoTieneTresDiasDeGraciaLuegoSePausaYALos90DiasSeArchiva() throws Exception {
+        Tenant gracia = publishedOwner("gracia", Instant.now().minus(1, ChronoUnit.DAYS));
+        publishedOwner("vencido", Instant.now().minus(5, ChronoUnit.DAYS));
+        publishedOwner("archivado", Instant.now().minus(100, ChronoUnit.DAYS));
+        publishedOwner("vigente", Instant.now().plus(10, ChronoUnit.DAYS));
         Tenant demo = tenant("demo");
         demo.setPublished(true);
-        demo = tenants.save(demo);
-        Cookie owner = login("owner@vencido.test");
+        tenants.save(demo);
 
+        Cookie enGracia = login("owner@gracia.test");
+        mvc.perform(get("/api/v1/auth/me").cookie(enGracia)).andExpect(jsonPath("$.plan.status").value("GRACE"))
+                .andExpect(jsonPath("$.plan.graceEndsAt").value(org.hamcrest.Matchers.startsWith(gracia.getPlanExpiresAt().plus(3, ChronoUnit.DAYS).toString().substring(0, 19))));
+        mvc.perform(withXsrf(post("/api/v1/admin/categories").cookie(enGracia), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Sigo editando\"}")).andExpect(status().isCreated());
+        mvc.perform(get("/api/v1/public/sites/gracia")).andExpect(status().isOk()).andExpect(jsonPath("$.reservationsEnabled").value(true));
+
+        Cookie owner = login("owner@vencido.test");
         mvc.perform(get("/api/v1/admin/site").cookie(owner)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/auth/me").cookie(owner))
                 .andExpect(jsonPath("$.plan.status").value("EXPIRED")).andExpect(jsonPath("$.plan.expiresAt").exists());
@@ -196,16 +201,61 @@ class ActivationCodesTest extends IntegrationTestSupport {
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("plan_expired"));
         assertThat(planPut(owner, "/api/v1/admin/site/publication", "{\"published\":false}")).contains("plan_expired");
         assertThat(tenants.findBySlug("vencido").orElseThrow().isPublished()).isTrue();
+        mvc.perform(get("/api/v1/public/sites/vencido")).andExpect(status().isGone()).andExpect(jsonPath("$.code").value("site_paused"));
 
-        mvc.perform(get("/api/v1/public/sites/vencido")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.reservationsEnabled").value(false));
+        mvc.perform(get("/api/v1/auth/me").cookie(login("owner@archivado.test"))).andExpect(jsonPath("$.plan.status").value("ARCHIVED"));
+        mvc.perform(get("/api/v1/public/sites/archivado")).andExpect(status().isNotFound());
+
         mvc.perform(get("/api/v1/public/sites/vigente")).andExpect(jsonPath("$.reservationsEnabled").value(true));
         mvc.perform(get("/api/v1/public/sites/demo")).andExpect(jsonPath("$.reservationsEnabled").value(true));
-
         Cookie activo = login("owner@vigente.test");
         mvc.perform(withXsrf(post("/api/v1/admin/categories").cookie(activo), newXsrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Nueva\"}")).andExpect(status().isCreated());
         mvc.perform(get("/api/v1/auth/me").cookie(activo)).andExpect(jsonPath("$.plan.status").value("ACTIVE"));
+    }
+
+    @Test
+    void renovarDuranteLaGraciaCuentaDesdeElVencimientoOriginalYDespuesDesdeHoy() throws Exception {
+        Instant vencio = Instant.now().minus(2, ChronoUnit.DAYS);
+        Tenant enGracia = ownerWithPlan("gracia", vencio);
+        Tenant pausado = ownerWithPlan("pausado", Instant.now().minus(20, ChronoUnit.DAYS));
+
+        mvc.perform(withXsrf(post("/api/v1/admin/plan/redeem").cookie(login("owner@gracia.test")), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"code\":\"%s\"}".formatted(newCode(1)))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
+        mvc.perform(withXsrf(post("/api/v1/admin/plan/redeem").cookie(login("owner@pausado.test")), newXsrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"code\":\"%s\"}".formatted(newCode(1)))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE"));
+
+        assertThat(tenants.findById(enGracia.getId()).orElseThrow().getPlanExpiresAt())
+                .isBetween(vencio.plus(27, ChronoUnit.DAYS), vencio.plus(32, ChronoUnit.DAYS));
+        assertThat(tenants.findById(pausado.getId()).orElseThrow().getPlanExpiresAt())
+                .isBetween(Instant.now().plus(27, ChronoUnit.DAYS), Instant.now().plus(32, ChronoUnit.DAYS));
+    }
+
+    @Test
+    void elSuperadminFiltraLosNegociosPorEtapaDelPlanConSuWhatsApp() throws Exception {
+        Tenant pronto = ownerWithPlan("pronto", Instant.now().plus(3, ChronoUnit.DAYS));
+        pronto.setWhatsappNumber("5491100000009");
+        tenants.save(pronto);
+        ownerWithPlan("gracia", Instant.now().minus(1, ChronoUnit.DAYS));
+        ownerWithPlan("pausado", Instant.now().minus(10, ChronoUnit.DAYS));
+        ownerWithPlan("archivado", Instant.now().minus(120, ChronoUnit.DAYS));
+        ownerWithPlan("tranquilo", Instant.now().plus(40, ChronoUnit.DAYS));
+
+        mvc.perform(get("/api/v1/superadmin/tenants").param("status", "soon").cookie(sa))
+                .andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].slug").value("pronto"))
+                .andExpect(jsonPath("$.content[0].planStatus").value("SOON")).andExpect(jsonPath("$.content[0].whatsappNumber").value("5491100000009"));
+        mvc.perform(get("/api/v1/superadmin/tenants").param("status", "grace").cookie(sa))
+                .andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].planStatus").value("GRACE"));
+        mvc.perform(get("/api/v1/superadmin/tenants").param("status", "paused").cookie(sa))
+                .andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].planStatus").value("EXPIRED"));
+        mvc.perform(get("/api/v1/superadmin/tenants").param("status", "archived").cookie(sa))
+                .andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].planStatus").value("ARCHIVED"));
+    }
+
+    private Tenant publishedOwner(String slug, Instant expires) throws Exception {
+        Tenant tenant = ownerWithPlan(slug, expires);
+        tenant.setPublished(true);
+        return tenants.save(tenant);
     }
 
     @Test
@@ -290,7 +340,7 @@ class ActivationCodesTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.content[0].status").value("REDEEMED"))
                 .andExpect(jsonPath("$.content[0].tenantCreatedAt").exists())
                 .andExpect(jsonPath("$.content[0].planExpiresAt").exists())
-                .andExpect(jsonPath("$.content[0].planStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.content[0].planStatus").value("SOON"))
                 .andExpect(jsonPath("$.content[1].planStatus").doesNotExist());
         mvc.perform(get("/api/v1/superadmin/codes").param("query", libre.substring(4, 9)).cookie(sa))
                 .andExpect(jsonPath("$.content", hasSize(1)));
@@ -310,7 +360,7 @@ class ActivationCodesTest extends IntegrationTestSupport {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM activation_codes WHERE code = ?", Long.class, libre)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action LIKE 'CODE_%'", Long.class)).isEqualTo(5);
         mvc.perform(get("/api/v1/superadmin/tenants").cookie(sa))
-                .andExpect(jsonPath("$.content[0].planStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.content[0].planStatus").value("SOON"))
                 .andExpect(jsonPath("$.content[0].planExpiresAt").exists());
     }
 

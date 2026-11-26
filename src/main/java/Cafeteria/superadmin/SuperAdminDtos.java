@@ -26,7 +26,7 @@ public final class SuperAdminDtos {
 
     public record TenantRow(UUID id, String slug, String name, boolean published, boolean suspended, Instant suspendedAt,
             String ownerEmail, boolean ownerVerified, long editors, Instant createdAt, Instant planExpiresAt,
-            String planStatus) {}
+            String planStatus, String whatsappNumber) {}
 
     public record TenantPage(List<TenantRow> content, int page, int size, long totalElements, int totalPages) {}
 

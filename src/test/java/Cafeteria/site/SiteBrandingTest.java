@@ -161,7 +161,7 @@ class SiteBrandingTest extends IntegrationTestSupport {
     void conElPlanVencidoElQrNoSePuedeCambiar() throws Exception {
         withPlan(6);
         Tenant t = tenants.findById(tenant.getId()).orElseThrow();
-        t.setPlanExpiresAt(java.time.Instant.now().minusSeconds(60));
+        t.setPlanExpiresAt(java.time.Instant.now().minus(java.time.Duration.ofDays(5)));
         tenants.save(t);
 
         mvc.perform(write(put("/api/v1/admin/qr"), owner, qr("dots", "solid", false)))

@@ -91,6 +91,13 @@ public class PublicSiteService {
     public PublicSite get(String slug) {
         Tenant tenant = tenants.findBySlug(slug).filter(Tenant::isPublished).filter(t -> t.getSuspendedAt() == null)
                 .orElseThrow(() -> ApiException.notFound("Sitio no encontrado"));
+        Cafeteria.plan.PlanService.Status planStatus = Cafeteria.plan.PlanService.planOf(tenant).status();
+        if (planStatus == Cafeteria.plan.PlanService.Status.ARCHIVED) {
+            throw ApiException.notFound("Sitio no encontrado");
+        }
+        if (planStatus == Cafeteria.plan.PlanService.Status.EXPIRED) {
+            throw new ApiException(org.springframework.http.HttpStatus.GONE, "site_paused", "Este sitio está en pausa");
+        }
         UUID tenantId = tenant.getId();
 
         List<Category> categoryRows = categories.findByTenantIdOrderBySortOrderAscIdAsc(tenantId);
@@ -157,7 +164,7 @@ public class PublicSiteService {
                 new Reservation(spaces.stream().filter(Space::bookable).map(Space::name).toList(),
                         List.copyOf(tenant.getPartySizes())),
                 publicCategories, logoUrl, spaces,
-                Cafeteria.plan.PlanService.planOf(tenant).status() == Cafeteria.plan.PlanService.Status.ACTIVE,
+                !planStatus.locked(),
                 coupons.publicCoupons(tenant, limits));
     }
 }

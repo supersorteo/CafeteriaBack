@@ -207,7 +207,7 @@ public class SuperAdminCodeService {
         if (slug == null) {
             return null;
         }
-        return expires != null && !expires.toInstant().isAfter(Instant.now()) ? "EXPIRED" : "ACTIVE";
+        return Cafeteria.plan.PlanService.stageOf(expires == null ? null : expires.toInstant());
     }
 
     private static Instant instant(Timestamp timestamp) {

@@ -46,11 +46,14 @@ public class OnlineOrderService {
     public record Checkout(String reference, String claimToken, String method, String providerRef, String initPoint,
             String amountLabel) {}
 
-    public record State(String reference, String status, String method, boolean ready, String failure) {}
+    public record State(String reference, String status, String method, boolean ready, String failure, boolean renewal) {}
+
+    private record Priced(String plan, String planName, int months, int usdCents, String currency, int amountMinor, BigDecimal rate) {}
 
     record Order(UUID id, String reference, String planCode, String planName, int months, String region, String method,
             String email, int usdCents, String currency, int amountMinor, String status, String providerRef, String businessName,
-            String slug, String passwordHash, String claimHash, UUID tenantId, Instant paidAt, Instant claimUsedAt, boolean emailVerified) {}
+            String slug, String passwordHash, String claimHash, UUID tenantId, Instant paidAt, Instant claimUsedAt, boolean emailVerified,
+            Instant fulfilledAt) {}
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
@@ -92,16 +95,8 @@ public class OnlineOrderService {
 
     public Checkout createCheckout(CheckoutRequest request) {
         String method = upper(request.method());
-        String plan = upper(request.planCode());
+        Priced price = price(request.planCode(), request.region(), method);
         String region = upper(request.region());
-        BillingService.Options options = billing.options();
-        BillingService.PlanOption price = options.plans().stream().filter(p -> p.code().equals(plan)).findFirst()
-                .orElseThrow(() -> ApiException.invalidField("planCode", "Elige un plan disponible"));
-        BillingService.RegionOption zone = options.regions().stream().filter(r -> r.code().equals(region)).findFirst()
-                .orElseThrow(() -> ApiException.invalidField("region", "Elige tu país"));
-        if (zone.methods().stream().noneMatch(m -> m.code().equals(method) && m.available() && !BillingService.WHATSAPP.equals(method))) {
-            throw ApiException.conflict("method_unavailable", "Este método de pago no está disponible por ahora");
-        }
         String email = request.email() == null ? "" : request.email().strip().toLowerCase();
         String slug = request.slug() == null ? "" : request.slug().strip().toLowerCase();
         String businessName = request.businessName() == null ? "" : request.businessName().strip();
@@ -111,14 +106,6 @@ public class OnlineOrderService {
         }
         if (tenants.existsBySlug(slug)) {
             throw ApiException.conflict("slug_taken", "Ese identificador ya está en uso");
-        }
-
-        String currency = BillingService.MERCADOPAGO.equals(method) ? "ARS" : "USD";
-        BigDecimal rate = null;
-        int amountMinor = price.usdCents();
-        if ("ARS".equals(currency)) {
-            rate = fx.usdToArs().orElseThrow(() -> ApiException.conflict("method_unavailable", "Este método de pago no está disponible por ahora"));
-            amountMinor = FxRates.pesos(price.usdCents(), rate) * 100;
         }
         if (!proofs.consume(email, request.emailProof())) {
             throw ApiException.badRequest("email_not_verified", "Confirma tu correo con el código que te enviamos.");
@@ -131,28 +118,71 @@ public class OnlineOrderService {
         try {
             jdbc.update("INSERT INTO orders (id, reference, plan_code, months, region, method, buyer_email, usd_cents, expires_at, currency, "
                     + "amount_minor, fx_rate, business_name, slug, password_hash, claim_hash, email_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)",
-                    UUID.randomUUID(), reference, plan, price.months(), region, method, email, price.usdCents(), Timestamp.from(expires),
-                    currency, amountMinor, rate, businessName, slug, encoder.encode(request.password()), sha256(claim));
+                    UUID.randomUUID(), reference, price.plan(), price.months(), region, method, email, price.usdCents(), Timestamp.from(expires),
+                    price.currency(), price.amountMinor(), price.rate(), businessName, slug, encoder.encode(request.password()), sha256(claim));
         } catch (DuplicateKeyException e) {
             proofs.release(email, request.emailProof());
             throw ApiException.conflict("slug_taken", "Ese identificador ya está en uso");
         }
+        try {
+            return start(reference, claim, method, price, email, expires);
+        } catch (ApiException e) {
+            proofs.release(email, request.emailProof());
+            throw e;
+        }
+    }
 
+    public Checkout createRenewal(UUID tenantId, String ownerEmail, String planCode, String rawRegion, String rawMethod) {
+        String method = upper(rawMethod);
+        Priced price = price(planCode, rawRegion, method);
+        String slug = tenants.findById(tenantId).map(t -> t.getSlug()).orElseThrow(() -> ApiException.notFound("Negocio no encontrado"));
+        if (Cafeteria.seed.DemoSiteSeeder.SLUG.equals(slug)) {
+            throw ApiException.conflict("plan_not_renewable", "El sitio de demostración no necesita renovación");
+        }
+        jdbc.update("UPDATE orders SET status = 'EXPIRED', failure_reason = 'Reemplazado por una renovación nueva' "
+                + "WHERE status = 'PENDING' AND slug IS NULL AND tenant_id = ?", tenantId);
+        String reference = billing.newReference();
+        Instant expires = Instant.now().plus(Duration.ofMinutes(config.checkoutMinutes()));
+        jdbc.update("INSERT INTO orders (id, reference, plan_code, months, region, method, buyer_email, usd_cents, expires_at, currency, "
+                + "amount_minor, fx_rate, tenant_id, email_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)",
+                UUID.randomUUID(), reference, price.plan(), price.months(), upper(rawRegion), method, ownerEmail.toLowerCase(), price.usdCents(),
+                Timestamp.from(expires), price.currency(), price.amountMinor(), price.rate(), tenantId);
+        return start(reference, null, method, price, ownerEmail, expires);
+    }
+
+    private Priced price(String rawPlan, String rawRegion, String method) {
+        String plan = upper(rawPlan);
+        String region = upper(rawRegion);
+        BillingService.Options options = billing.options();
+        BillingService.PlanOption option = options.plans().stream().filter(p -> p.code().equals(plan)).findFirst()
+                .orElseThrow(() -> ApiException.invalidField("planCode", "Elige un plan disponible"));
+        BillingService.RegionOption zone = options.regions().stream().filter(r -> r.code().equals(region)).findFirst()
+                .orElseThrow(() -> ApiException.invalidField("region", "Elige tu país"));
+        if (zone.methods().stream().noneMatch(m -> m.code().equals(method) && m.available() && !BillingService.WHATSAPP.equals(method))) {
+            throw ApiException.conflict("method_unavailable", "Este método de pago no está disponible por ahora");
+        }
+        if (!BillingService.MERCADOPAGO.equals(method)) {
+            return new Priced(plan, option.name(), option.months(), option.usdCents(), "USD", option.usdCents(), null);
+        }
+        BigDecimal rate = fx.usdToArs().orElseThrow(() -> ApiException.conflict("method_unavailable", "Este método de pago no está disponible por ahora"));
+        return new Priced(plan, option.name(), option.months(), option.usdCents(), "ARS", FxRates.pesos(option.usdCents(), rate) * 100, rate);
+    }
+
+    private Checkout start(String reference, String claim, String method, Priced price, String email, Instant expires) {
+        String title = "Deliora " + price.planName() + " (1 mes)";
         try {
             if (BillingService.PAYPAL.equals(method)) {
-                String id = paypal.createOrder(reference, "Deliora " + price.name() + " (1 mes)", price.usdCents());
+                String id = paypal.createOrder(reference, title, price.usdCents());
                 jdbc.update("UPDATE orders SET provider_ref = ? WHERE reference = ?", id, reference);
                 return new Checkout(reference, claim, method, id, null, "US$ " + BillingService.moneyLabel(price.usdCents()));
             }
-            Instant mpExpires = expires;
-            MercadoPagoClient.Preference preference = mercadopago.createPreference(reference, plan, "Deliora " + price.name() + " (1 mes)",
-                    BigDecimal.valueOf(amountMinor, 2), email, mpExpires);
+            MercadoPagoClient.Preference preference = mercadopago.createPreference(reference, price.plan(), title,
+                    BigDecimal.valueOf(price.amountMinor(), 2), email, expires);
             jdbc.update("UPDATE orders SET provider_ref = ? WHERE reference = ?", preference.id(), reference);
-            return new Checkout(reference, claim, method, preference.id(), preference.initPoint(), "$ " + (amountMinor / 100) + " ARS");
+            return new Checkout(reference, claim, method, preference.id(), preference.initPoint(), "$ " + (price.amountMinor() / 100) + " ARS");
         } catch (PaymentProviderException e) {
             log.error("No se pudo iniciar el cobro {} ({}): {}", reference, method, e.getMessage());
             jdbc.update("UPDATE orders SET status = 'FAILED', failure_reason = ? WHERE reference = ?", abbreviate(e.getMessage()), reference);
-            proofs.release(email, request.emailProof());
             throw new ApiException(HttpStatus.BAD_GATEWAY, "payment_provider_error",
                     "No pudimos iniciar el pago. Inténtalo de nuevo en unos minutos.");
         }
@@ -214,7 +244,7 @@ public class OnlineOrderService {
             case "EXPIRED" -> "El pedido venció.";
             default -> null;
         };
-        return new State(order.reference(), order.status(), order.method(), order.tenantId() != null, failure);
+        return new State(order.reference(), order.status(), order.method(), order.fulfilledAt() != null, failure, order.slug() == null);
     }
 
     public Optional<User> claim(String reference, String claimToken) {
@@ -229,11 +259,12 @@ public class OnlineOrderService {
     }
 
     public void reconcile() {
-        for (UUID id : jdbc.query("SELECT id FROM orders WHERE status = 'PAID' AND tenant_id IS NULL AND slug IS NOT NULL ORDER BY paid_at LIMIT 50",
+        for (UUID id : jdbc.query("SELECT id FROM orders WHERE status = 'PAID' AND fulfilled_at IS NULL AND method IN ('PAYPAL', 'MERCADOPAGO') "
+                + "AND (slug IS NOT NULL OR tenant_id IS NOT NULL) ORDER BY paid_at LIMIT 50",
                 (rs, i) -> rs.getObject(1, UUID.class))) {
             fulfill(id);
         }
-        for (String reference : jdbc.query("SELECT reference FROM orders WHERE status = 'PENDING' AND method = 'MERCADOPAGO' AND slug IS NOT NULL "
+        for (String reference : jdbc.query("SELECT reference FROM orders WHERE status = 'PENDING' AND method = 'MERCADOPAGO' "
                 + "AND created_at > now() - interval '2 days' ORDER BY created_at LIMIT 50", (rs, i) -> rs.getString(1))) {
             try {
                 for (MercadoPagoClient.Payment payment : mercadopago.paymentsOf(reference)) {
@@ -246,7 +277,7 @@ public class OnlineOrderService {
                 log.warn("Reconciliacion de {} fallida: {}", reference, e.getMessage());
             }
         }
-        jdbc.update("UPDATE orders SET status = 'EXPIRED' WHERE status = 'PENDING' AND slug IS NOT NULL AND expires_at < now() - interval '1 hour'");
+        jdbc.update("UPDATE orders SET status = 'EXPIRED' WHERE status = 'PENDING' AND method IN ('PAYPAL', 'MERCADOPAGO') AND expires_at < now() - interval '1 hour'");
     }
 
     private void processPayPal(Order order, PayPalClient.Capture capture) {
@@ -303,21 +334,45 @@ public class OnlineOrderService {
     private void doFulfill(UUID id) {
         jdbc.queryForList("SELECT id FROM orders WHERE id = ? FOR UPDATE", id);
         Order order = jdbc.query(SELECT + " WHERE o.id = ?", this::row, id).stream().findFirst().orElseThrow();
-        if (!"PAID".equals(order.status()) || order.tenantId() != null || order.slug() == null) {
+        if (!"PAID".equals(order.status()) || order.fulfilledAt() != null) {
             return;
         }
         String actor = adminFor(order.region());
         String provider = BillingService.PAYPAL.equals(order.method()) ? "PayPal" : "Mercado Pago";
+        String amount = "USD".equals(order.currency()) ? "US$ " + BillingService.moneyLabel(order.amountMinor()) : "$ " + (order.amountMinor() / 100) + " ARS";
+        if (order.slug() == null) {
+            renewFrom(order, provider, actor, amount);
+            return;
+        }
+        if (order.tenantId() != null) {
+            return;
+        }
         PlanService.Batch batch = plans.generateBatch(provider + " · " + order.planName(), order.months(), 1, "Pago online " + order.reference(), actor, order.planCode());
         User user = registration.provision(order.email(), order.passwordHash(), order.businessName(), order.slug(), batch.codes().get(0), order.emailVerified());
         UUID tenantId = jdbc.queryForObject("SELECT tenant_id FROM tenant_users WHERE user_id = ?", UUID.class, user.getId());
         UUID codeId = jdbc.queryForObject("SELECT id FROM activation_codes WHERE code = ?", UUID.class, batch.codes().get(0));
-        jdbc.update("UPDATE orders SET tenant_id = ?, activation_code_id = ?, confirmed_by = ?, confirmed_at = now(), password_hash = NULL WHERE id = ?",
-                tenantId, codeId, "sistema", id);
-        String amount = "USD".equals(order.currency()) ? "US$ " + BillingService.moneyLabel(order.amountMinor()) : "$ " + (order.amountMinor() / 100) + " ARS";
+        jdbc.update("UPDATE orders SET tenant_id = ?, activation_code_id = ?, confirmed_by = ?, confirmed_at = now(), fulfilled_at = now(), "
+                + "password_hash = NULL WHERE id = ?", tenantId, codeId, "sistema", id);
         outbox.enqueue(EmailTemplates.PAYMENT_RECEIPT, order.email(), order.slug() + "|" + order.planName() + "|" + amount + "|" + order.reference());
         jdbc.update("INSERT INTO audit_log (id, action, target_id, target_label, actor, detail) VALUES (?, 'ORDER_PAID', ?, ?, 'sistema', ?)",
                 UUID.randomUUID(), id, order.reference() + " · " + order.planName(), "pago online " + order.method() + " · negocio /" + order.slug());
+    }
+
+    private void renewFrom(Order order, String provider, String actor, String amount) {
+        if (order.tenantId() == null) {
+            return;
+        }
+        PlanService.Batch batch = plans.generateBatch(provider + " · " + order.planName(), order.months(), 1, "Renovación online " + order.reference(),
+                actor, order.planCode());
+        String code = batch.codes().get(0);
+        PlanService.Plan plan = plans.renew(order.tenantId(), code, order.email());
+        UUID codeId = jdbc.queryForObject("SELECT id FROM activation_codes WHERE code = ?", UUID.class, code);
+        jdbc.update("UPDATE orders SET activation_code_id = ?, confirmed_by = 'sistema', confirmed_at = now(), fulfilled_at = now() WHERE id = ?",
+                codeId, order.id());
+        String slug = jdbc.queryForObject("SELECT slug FROM tenants WHERE id = ?", String.class, order.tenantId());
+        outbox.enqueue(EmailTemplates.RENEWAL_RECEIPT, order.email(), slug + "|" + order.planName() + "|" + amount + "|" + plan.expiresAt());
+        jdbc.update("INSERT INTO audit_log (id, action, target_id, target_label, actor, detail) VALUES (?, 'ORDER_PAID', ?, ?, 'sistema', ?)",
+                UUID.randomUUID(), order.id(), order.reference() + " · " + order.planName(), "renovación online " + order.method() + " · negocio /" + slug);
     }
 
     private String adminFor(String region) {
@@ -336,7 +391,7 @@ public class OnlineOrderService {
 
     private static final String SELECT = "SELECT o.id, o.reference, o.plan_code, p.name AS plan_name, o.months, o.region, o.method, o.buyer_email, "
             + "o.usd_cents, o.currency, coalesce(o.amount_minor, o.usd_cents) AS amount_minor, o.status, o.provider_ref, o.business_name, o.slug, "
-            + "o.password_hash, o.claim_hash, o.tenant_id, o.paid_at, o.claim_used_at, o.email_verified FROM orders o JOIN billing_plans p ON p.code = o.plan_code";
+            + "o.password_hash, o.claim_hash, o.tenant_id, o.paid_at, o.claim_used_at, o.email_verified, o.fulfilled_at FROM orders o JOIN billing_plans p ON p.code = o.plan_code";
 
     private Order find(String reference) {
         return jdbc.query(SELECT + " WHERE o.reference = ?", this::row, reference == null ? "" : reference.strip().toUpperCase()).stream()
@@ -346,12 +401,13 @@ public class OnlineOrderService {
     private Order row(java.sql.ResultSet rs, int i) throws java.sql.SQLException {
         Timestamp paid = rs.getTimestamp("paid_at");
         Timestamp claimUsed = rs.getTimestamp("claim_used_at");
+        Timestamp fulfilled = rs.getTimestamp("fulfilled_at");
         return new Order(rs.getObject("id", UUID.class), rs.getString("reference"), rs.getString("plan_code"), rs.getString("plan_name"),
                 rs.getInt("months"), rs.getString("region"), rs.getString("method"), rs.getString("buyer_email"), rs.getInt("usd_cents"),
                 rs.getString("currency"), rs.getInt("amount_minor"), rs.getString("status"), rs.getString("provider_ref"),
                 rs.getString("business_name"), rs.getString("slug"), rs.getString("password_hash"), rs.getString("claim_hash"),
                 rs.getObject("tenant_id", UUID.class), paid == null ? null : paid.toInstant(), claimUsed == null ? null : claimUsed.toInstant(),
-                rs.getBoolean("email_verified"));
+                rs.getBoolean("email_verified"), fulfilled == null ? null : fulfilled.toInstant());
     }
 
     private static void requireMethod(Order order, String method) {
